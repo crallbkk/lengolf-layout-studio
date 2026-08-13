@@ -21,7 +21,93 @@ const WALL_THICKNESS = 0.15;
 const CONCRETE = '#b9b6ae';
 const BLOCKWORK = '#d7d4cc';
 const SLAB = '#a9a69f';
-const GLASS = '#9fc4d8';
+const GLASS = '#cfe0e4';
+const GLAZING_FRAME = '#3b3f42';
+const SHOPFRONT_FRAME = '#7d8a7d';
+
+/** Curtain wall module. The site photographs read at roughly this spacing. */
+const MULLION_SPACING_M = 2.7;
+const MULLION_W = 0.07;
+const FRAME_D = 0.1;
+
+/**
+ * A glazed run, built as curtain wall rather than a tinted slab.
+ *
+ * The first version was one translucent box per run, which from inside read as
+ * milky perspex and hid the single best thing about this unit — that you can
+ * see the plaza through it. In the site photographs the glass is essentially
+ * clear and what you actually read is the frame: slim dark mullions on a
+ * regular module, a transom, and a head. So the glass goes nearly transparent
+ * and the frame does the drawing.
+ */
+function GlazedWall({
+  panel: p,
+  height,
+  frame,
+}: {
+  panel: ReturnType<typeof wallPanels>[number];
+  height: number;
+  frame: string;
+}) {
+  // Divide the run into whole modules so mullions land symmetrically rather
+  // than leaving a sliver at one end.
+  const bays = Math.max(1, Math.round(p.length / MULLION_SPACING_M));
+  const step = p.length / bays;
+  const transomY = height * 0.62;
+
+  /**
+   * The curved corner arrives here as ~20 tessellated segments a few
+   * centimetres long. Framing each one puts a 70 mm mullion at both ends of a
+   * 60 mm panel, and the whole curve renders as a solid black post. Short
+   * segments therefore get glass and horizontals only, which is also how the
+   * corner reads on site: continuous curved glazing, not a row of frames.
+   */
+  const framed = p.length >= 1;
+
+  return (
+    <group position={[p.mid.x, 0, p.mid.y]} rotation={[0, p.yaw, 0]}>
+      <mesh position={[0, height / 2, 0]}>
+        <boxGeometry args={[p.length, height, 0.03]} />
+        <meshPhysicalMaterial
+          color={GLASS}
+          transparent
+          opacity={0.13}
+          roughness={0.04}
+          metalness={0}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
+      {/* Head and sill. */}
+      {[height - 0.05, 0.05].map((y) => (
+        <mesh key={y} position={[0, y, 0]}>
+          <boxGeometry args={[p.length, 0.1, FRAME_D]} />
+          <meshStandardMaterial color={frame} roughness={0.6} metalness={0.2} />
+        </mesh>
+      ))}
+
+      {/* Transom. */}
+      <mesh position={[0, transomY, 0]}>
+        <boxGeometry args={[p.length, 0.06, FRAME_D * 0.9]} />
+        <meshStandardMaterial color={frame} roughness={0.6} metalness={0.2} />
+      </mesh>
+
+      {/* Mullions, including both ends. */}
+      {framed
+        ? Array.from({ length: bays + 1 }, (_, i) => (
+            <mesh key={i} position={[-p.length / 2 + i * step, height / 2, 0]}>
+              <boxGeometry args={[MULLION_W, height, FRAME_D]} />
+              <meshStandardMaterial
+                color={frame}
+                roughness={0.6}
+                metalness={0.2}
+              />
+            </mesh>
+          ))
+        : null}
+    </group>
+  );
+}
 
 export default function Shell3D({
   structure,
@@ -52,32 +138,27 @@ export default function Shell3D({
       {/* Walls. Glazing runs the full storey height; solid walls stop at the
           beam soffit, which is what the site photographs actually show — the
           blockwork dies into the downstand rather than the slab. */}
-      {panels.map((p) => {
-        const glazed = p.kind !== 'solid';
-        const height = glazed ? structure.slabSoffitM : structure.beamSoffitM;
-        return (
+      {panels.map((p) =>
+        p.kind === 'solid' ? (
           <mesh
             key={p.id}
-            position={[p.mid.x, height / 2, p.mid.y]}
+            position={[p.mid.x, structure.beamSoffitM / 2, p.mid.y]}
             rotation={[0, p.yaw, 0]}
           >
-            <boxGeometry args={[p.length, height, WALL_THICKNESS]} />
-            <meshStandardMaterial
-              color={
-                p.kind === 'solid'
-                  ? BLOCKWORK
-                  : p.kind === 'shopfront'
-                    ? '#cfd8cf'
-                    : GLASS
-              }
-              transparent={glazed}
-              opacity={p.kind === 'glazing' ? 0.22 : p.kind === 'shopfront' ? 0.3 : 1}
-              roughness={glazed ? 0.1 : 0.9}
-              metalness={glazed ? 0.1 : 0}
+            <boxGeometry
+              args={[p.length, structure.beamSoffitM, WALL_THICKNESS]}
             />
+            <meshStandardMaterial color={BLOCKWORK} roughness={0.9} />
           </mesh>
-        );
-      })}
+        ) : (
+          <GlazedWall
+            key={p.id}
+            panel={p}
+            height={structure.slabSoffitM}
+            frame={p.kind === 'shopfront' ? SHOPFRONT_FRAME : GLAZING_FRAME}
+          />
+        ),
+      )}
 
       {/* Structural columns, full height to the slab. */}
       {COLUMNS.map((c) => (
