@@ -1,26 +1,50 @@
 @import "tailwindcss";
 
+/*
+ * This tool is a schematic drawing surface. The plan palette is a set of muted
+ * light fills tuned to read against paper-white, and the warning colours (red /
+ * amber) are calibrated against that. Following the OS dark preference would
+ * invert the drawing and destroy both. So the app deliberately pins a single
+ * light theme rather than shipping a second, worse palette.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f4f4f2;
+  --foreground: #1c1b18;
+  --panel: #ffffff;
+  --border: #e2e0da;
+  --muted: #6b6a64;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-panel: var(--panel);
+  --color-line: var(--border);
+  --color-muted: var(--muted);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  /* The canvas owns all panning; the page itself must never scroll or bounce. */
+  overscroll-behavior: none;
+}
+
+/* Numeric readouts must not jitter while dragging. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Stop text selection fighting with canvas drags. */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
 }
