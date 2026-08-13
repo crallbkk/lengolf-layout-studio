@@ -223,12 +223,60 @@ describe('the 24,370 structural pier', () => {
   });
 });
 
+describe('structural columns', () => {
+  it('hard-flags an object covering a column', () => {
+    // col-1 is the round column on grid 1-3 x 1-B, at (1.585, 5.394).
+    const a = obj('putting-green', 1.585, 5.394, 3, 2);
+    const w = computeWarnings([a], settings);
+    const clash = w.find((x) => x.id.startsWith('column:'));
+    // A column is load-bearing and immovable — this is an impossibility, not a
+    // "check the drawing", so it must be hard.
+    expect(clash?.severity).toBe('hard');
+    expect(clash?.message).toContain('structural column');
+  });
+
+  it('does not flag an object clear of every column', () => {
+    const a = obj('generic', 5.5, 9.5, 2, 2);
+    const w = computeWarnings([a], settings);
+    expect(w.some((x) => x.id.startsWith('column:'))).toBe(false);
+  });
+
+  it('treats a round column as round, not as its bounding square', () => {
+    // Diagonally off the circle's corner: inside the bounding square but
+    // outside the actual 0.7 m circle, so it must NOT clash.
+    const a = obj('generic', 1.585 + 0.42, 5.394 + 0.42, 0.3, 0.3);
+    const w = computeWarnings([a], settings);
+    expect(w.some((x) => x.id.startsWith('column:'))).toBe(false);
+  });
+});
+
 describe('the shipped concept layout', () => {
-  it('produces no hard warnings', async () => {
+  /**
+   * The concept has no overlaps and nothing outside the shell. It DOES clash
+   * with the structural columns, because the drawing was laid out without them:
+   * the three rear columns are traced centred on the wall line, so they stand
+   * 350 mm proud of it and every bay flush to that wall clips one. That is a
+   * real finding about the concept, so it is asserted rather than tuned away.
+   */
+  it('has no overlaps and nothing outside the footprint', async () => {
     const { conceptLayout } = await import('../seed');
     const w = computeWarnings(conceptLayout(), settings);
     const hard = w.filter((x) => x.severity === 'hard');
-    expect(hard.map((x) => x.message)).toEqual([]);
+    const notColumns = hard.filter((x) => !x.id.startsWith('column:'));
+    expect(notColumns.map((x) => x.message)).toEqual([]);
+  });
+
+  it('reports the column clashes the concept drawing ignored', async () => {
+    const { conceptLayout } = await import('../seed');
+    const w = computeWarnings(conceptLayout(), settings);
+    const columns = w.filter((x) => x.id.startsWith('column:'));
+    expect(columns.length).toBeGreaterThan(0);
+    expect(columns.every((x) => x.severity === 'hard')).toBe(true);
+    // Every bay flush to the rear wall clips its column by exactly half a
+    // column width, which is the signature of columns traced centred on the
+    // wall line rather than flush with its inner face.
+    const halfColumn = columns.filter((x) => x.message.includes('0.35 m'));
+    expect(halfColumn).toHaveLength(5);
   });
 
   /**

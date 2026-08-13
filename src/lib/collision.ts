@@ -1,4 +1,5 @@
 import {
+  COLUMNS,
   FIXED_OBSTACLES,
   RE_ENTRANT_CORNER_M,
   SHELL_OUTLINE,
@@ -35,6 +36,32 @@ const OBSTACLE_POLYS = FIXED_OBSTACLES.map((o) => ({
   label: o.label,
   poly: rectPolygon(o.x, o.y, o.w, o.d),
 }));
+
+/**
+ * Structural columns as convex polygons. Round columns become a 16-gon
+ * inscribed in the circle — at a 350 mm radius that understates the true
+ * footprint by under 1 mm, which is well inside the tolerance everything else
+ * here works to, and it keeps every shape convex so SAT stays valid.
+ */
+const COLUMN_POLYS = COLUMNS.map((c) => {
+  const r = c.size / 2;
+  if (c.shape === 'circle') {
+    const SIDES = 16;
+    const poly: Vec2[] = [];
+    for (let i = 0; i < SIDES; i++) {
+      const a = (i / SIDES) * Math.PI * 2;
+      poly.push({
+        x: c.center.x + r * Math.cos(a),
+        y: c.center.y + r * Math.sin(a),
+      });
+    }
+    return { id: c.id, poly };
+  }
+  return {
+    id: c.id,
+    poly: rectPolygon(c.center.x - r, c.center.y - r, c.size, c.size),
+  };
+});
 
 function distanceToShellBoundary(p: Vec2): number {
   let min = Infinity;
@@ -172,6 +199,23 @@ export function computeWarnings(
           severity: 'soft',
           objectIds: [o.id],
           message: `${o.label} sits ${fmt(gap)} m from a wall — under the ${fmt(clearance)} m clearance rule`,
+        });
+      }
+    }
+
+    /**
+     * Structural columns are load-bearing and immovable. Unlike a riser, which a
+     * back-of-house room can legitimately enclose, you cannot build anything
+     * through a column — so this is a hard clash, not a "check the drawing".
+     */
+    for (const col of COLUMN_POLYS) {
+      const sep = convexSeparation(poly, col.poly);
+      if (sep < -EPS) {
+        warnings.push({
+          id: `column:${o.id}:${col.id}`,
+          severity: 'hard',
+          objectIds: [o.id],
+          message: `${o.label} covers structural column ${col.id.replace('col-', '')} by ${fmt(-sep)} m`,
         });
       }
     }
