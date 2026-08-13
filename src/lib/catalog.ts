@@ -157,6 +157,21 @@ export const CATALOG: Record<ObjectKind, TypeSpec> = {
     capacity: 0,
     requiresClearance: false,
   },
+  'cart-pillar': {
+    kind: 'cart-pillar',
+    label: 'Cart / pillar feature',
+    fill: '#f7efdc',
+    stroke: '#b08329',
+    text: '#5d4413',
+    minW: 2,
+    minD: 1.4,
+    // A golf cart is about 2.4 m long and 1.2 m wide; the footprint here is the
+    // front half that emerges from the column, plus standing room around it.
+    defaultW: 2.6,
+    defaultD: 1.7,
+    capacity: 0,
+    requiresClearance: false,
+  },
   generic: {
     kind: 'generic',
     label: 'Rectangle',
@@ -184,6 +199,7 @@ export const CATALOG_ORDER: ObjectKind[] = [
   'pantry',
   'service-band',
   'store',
+  'cart-pillar',
   'generic',
 ];
 

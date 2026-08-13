@@ -21,8 +21,23 @@ type Seed = {
 };
 
 const SEEDS: Seed[] = [
-  { type: 'putting-green', label: 'Putting green', x: 600, y: 300, w: 9600, d: 2400 },
-  { type: 'event-floor', label: 'Event floor', x: 2000, y: 3500, w: 9300, d: 3000 },
+  /**
+   * Event floor ON the plaza glazing, putting green pulled back behind it.
+   *
+   * This is the 8 August correction and it is the opposite way round from the
+   * Option 2 drawing the rest of this seed comes from. The frontage has to
+   * carry people and activity, because that is what a podium landlord wants to
+   * see from the plaza; turf against the glass shows the landlord grass.
+   *
+   * The green sits in the middle of the west portion and wraps the round
+   * column at (1.585, 5.394) on purpose — the cart installation stands on it,
+   * emerging from the base of that column.
+   */
+  { type: 'event-floor', label: 'Event floor', x: 600, y: 400, w: 9400, d: 2900 },
+  { type: 'putting-green', label: 'Putting green', x: 600, y: 4000, w: 7400, d: 2600 },
+  // Butted against the east face of the round column and centred on it, so the
+  // cart reads as driving out of the pillar rather than parked beside it.
+  { type: 'cart-pillar', label: 'Cart / DRIVE THRU', x: 1885, y: 4544, w: 2600, d: 1700 },
   { type: 'bar', label: 'Bar', x: 12583, y: 3544, w: 6765, d: 2750 },
   { type: 'lounge', label: 'Lounge', x: 19748, y: 3133, w: 7150, d: 2567 },
   { type: 'pantry', label: 'Pantry', x: 26998, y: 3444, w: 1842, d: 3050 },

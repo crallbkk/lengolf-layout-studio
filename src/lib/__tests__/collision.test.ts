@@ -76,6 +76,22 @@ describe('overlap detection', () => {
     const overlap = w.find((x) => x.id.startsWith('overlap:'));
     expect(overlap?.message).toContain('0.50 m');
   });
+
+  it('lets an object stand on a floor finish', () => {
+    // The cart installation stands ON the putting green by design.
+    const green = obj('putting-green', 4, 5.3, 7.4, 2.6);
+    const cart = obj('cart-pillar', 3.2, 5.4, 2.6, 1.7);
+    const w = computeWarnings([green, cart], settings);
+    expect(w.filter((x) => x.id.startsWith('overlap:'))).toHaveLength(0);
+  });
+
+  it('still flags two floor finishes overlapping each other', () => {
+    // Turf and tile cannot both be the floor in the same place.
+    const green = obj('putting-green', 4, 5, 6, 2.4);
+    const event = obj('event-floor', 4, 5, 6, 2.4);
+    const w = computeWarnings([green, event], settings);
+    expect(w.some((x) => x.id.startsWith('overlap:'))).toBe(true);
+  });
 });
 
 describe('clearance rule', () => {
@@ -226,13 +242,21 @@ describe('the 24,370 structural pier', () => {
 describe('structural columns', () => {
   it('hard-flags an object covering a column', () => {
     // col-1 is the round column on grid 1-3 x 1-B, at (1.585, 5.394).
-    const a = obj('putting-green', 1.585, 5.394, 3, 2);
+    const a = obj('bar', 1.585, 5.394, 3, 2);
     const w = computeWarnings([a], settings);
     const clash = w.find((x) => x.id.startsWith('column:'));
     // A column is load-bearing and immovable — this is an impossibility, not a
     // "check the drawing", so it must be hard.
     expect(clash?.severity).toBe('hard');
     expect(clash?.message).toContain('structural column');
+  });
+
+  it('does not flag a floor finish wrapping a column', () => {
+    // Turf is laid around a column base, not through it — and the concept
+    // wraps the putting green around this exact column for the cart piece.
+    const a = obj('putting-green', 1.585, 5.394, 3, 2);
+    const w = computeWarnings([a], settings);
+    expect(w.some((x) => x.id.startsWith('column:'))).toBe(false);
   });
 
   it('does not flag an object clear of every column', () => {

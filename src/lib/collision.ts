@@ -6,6 +6,7 @@ import {
   type Vec2,
 } from './floorplan';
 import { CATALOG, isBay } from './catalog';
+import { VOLUMES } from './volume';
 import type { PlacedObject, Settings, Warning } from './types';
 import {
   convexSeparation,
@@ -142,6 +143,19 @@ export function computeWarnings(
       const b = objects[j];
       const sep = convexSeparation(polys.get(a.id)!, polys.get(b.id)!);
 
+      /**
+       * A floor finish is a surface, and things stand on surfaces. The cart
+       * installation stands on the putting green by design, and cocktail
+       * tables stand on the event floor; calling either an overlap would be
+       * calling the concept an error.
+       *
+       * Exactly one side, though. Two floor finishes overlapping each other IS
+       * a conflict — turf and tile cannot both be the floor.
+       */
+      const aFloor = VOLUMES[a.type].mass === 'floor-finish';
+      const bFloor = VOLUMES[b.type].mass === 'floor-finish';
+      if (aFloor !== bFloor) continue;
+
       if (sep < -EPS) {
         warnings.push({
           id: `overlap:${a.id}:${b.id}`,
@@ -207,16 +221,24 @@ export function computeWarnings(
      * Structural columns are load-bearing and immovable. Unlike a riser, which a
      * back-of-house room can legitimately enclose, you cannot build anything
      * through a column — so this is a hard clash, not a "check the drawing".
+     *
+     * A floor finish is the exception, and not a grudging one. Turf or tile is
+     * laid AROUND a column base, not through it, and the concept deliberately
+     * wraps the putting green around the round column so the cart installation
+     * can stand on it. Flagging that would be flagging the design, which is how
+     * a warning list trains people to stop reading warnings.
      */
-    for (const col of COLUMN_POLYS) {
-      const sep = convexSeparation(poly, col.poly);
-      if (sep < -EPS) {
-        warnings.push({
-          id: `column:${o.id}:${col.id}`,
-          severity: 'hard',
-          objectIds: [o.id],
-          message: `${o.label} covers structural column ${col.id.replace('col-', '')} by ${fmt(-sep)} m`,
-        });
+    if (VOLUMES[o.type].mass !== 'floor-finish') {
+      for (const col of COLUMN_POLYS) {
+        const sep = convexSeparation(poly, col.poly);
+        if (sep < -EPS) {
+          warnings.push({
+            id: `column:${o.id}:${col.id}`,
+            severity: 'hard',
+            objectIds: [o.id],
+            message: `${o.label} covers structural column ${col.id.replace('col-', '')} by ${fmt(-sep)} m`,
+          });
+        }
       }
     }
 

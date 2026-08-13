@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { FIT_EVENT } from '@/components/canvas/FloorPlanCanvas';
 import { useLayoutStore } from '@/store/useLayoutStore';
+import { useViewStore } from '@/store/useViewStore';
 
 const BTN =
   'inline-flex items-center gap-1.5 rounded-md border border-black/15 px-2.5 py-1 text-xs font-medium ' +
@@ -69,6 +70,10 @@ export default function Toolbar() {
   const shareUrl = useLayoutStore((s) => s.shareUrl);
   const hydrated = useLayoutStore((s) => s.hydrated);
 
+  const viewMode = useViewStore((s) => s.mode);
+  const setViewMode = useViewStore((s) => s.setMode);
+  const is3d = viewMode === '3d';
+
   const [copyState, setCopyState] = useState<CopyState>('idle');
   const [manualUrl, setManualUrl] = useState<string | null>(null);
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -125,6 +130,32 @@ export default function Toolbar() {
         <span className="font-normal opacity-60">— Layout Studio</span>
       </h1>
 
+      {/* Plan and model are two views of one layout, so this is a view switch
+          rather than a mode: nothing about the edit state changes with it. */}
+      <div
+        role="radiogroup"
+        aria-label="View"
+        className="flex overflow-hidden rounded-md border border-black/15 dark:border-white/20"
+      >
+        {(['2d', '3d'] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            role="radio"
+            aria-checked={viewMode === m}
+            onClick={() => setViewMode(m)}
+            title={m === '2d' ? 'Plan view' : '3D model view'}
+            className={
+              viewMode === m
+                ? 'bg-slate-800 px-2.5 py-1 text-xs font-medium text-white'
+                : 'px-2.5 py-1 text-xs font-medium hover:bg-black/[0.05] dark:hover:bg-white/[0.08]'
+            }
+          >
+            {m === '2d' ? 'Plan' : '3D'}
+          </button>
+        ))}
+      </div>
+
       <div className="flex items-center gap-1.5">
         <button
           type="button"
@@ -148,6 +179,10 @@ export default function Toolbar() {
         </button>
       </div>
 
+      {/* Fit, measure and snap all act on the plan canvas, which is not mounted
+          in 3D. Hiding them beats leaving dead controls on screen. */}
+      {is3d ? null : (
+        <>
       <div className="flex items-center gap-1.5">
         <button
           type="button"
@@ -200,6 +235,8 @@ export default function Toolbar() {
           {gridStepLabel(gridSnapMm)} grid
         </span>
       </div>
+        </>
+      )}
 
       <div className="ml-auto flex items-center gap-2">
         <span
