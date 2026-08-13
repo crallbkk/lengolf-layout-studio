@@ -33,6 +33,40 @@ npm run typecheck
 npm run build
 ```
 
+## Access control
+
+The deployed site is behind a single shared password, enforced in `src/proxy.ts`
+(`proxy.ts` is the Next 16 replacement for `middleware.ts`). Vercel's own password
+protection is a paid feature; this does the same job on the free tier.
+
+Set these in Vercel → Project → Settings → Environment Variables:
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `APP_PASSWORD` | yes | The shared password. |
+| `APP_USER` | no | Username, defaults to `lengolf`. |
+
+Two behaviours worth knowing:
+
+- **Local dev is open.** With `APP_PASSWORD` unset and `NODE_ENV !== 'production'`,
+  the gate is skipped so `npm run dev` needs no setup. Set `APP_PASSWORD` in
+  `.env.local` if you want to exercise it locally.
+- **Production fails closed.** If `APP_PASSWORD` is unset in production the site
+  returns `503`, not an open site. Silently serving the floor plan to the world is
+  the one outcome worth breaking the deployment over.
+
+It uses HTTP Basic auth rather than a styled login page, on purpose. A cookie-based
+login page has to exempt `/_next/static` from the gate — otherwise the login page
+can't load its own CSS and JS — and the unit's traced geometry and dimensions are
+compiled into those JS chunks. Basic auth is replayed by the browser on every
+request, so the bundle is covered too. Verified: an unauthenticated request for a
+`/_next/static/chunks/*.js` file returns `401`.
+
+The trade-offs: a native browser dialog instead of a designed form, and signing out
+means closing the browser. It is also one shared secret with no per-user identity or
+audit trail — fine for a small internal team, not a substitute for real auth if this
+ever holds anything more sensitive.
+
 ## How it works
 
 Everything is client-side. The layout lives in `localStorage`, and **Share link** encodes the
