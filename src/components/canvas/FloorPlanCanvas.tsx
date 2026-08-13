@@ -27,6 +27,7 @@ import {
   softWarningIds,
 } from '@/lib/collision';
 import { SHELL_OUTLINE } from '@/lib/floorplan';
+import { viewCenter } from '@/lib/viewCenter';
 import { bounds, corners, snap, toLocal, toWorld } from '@/lib/geometry';
 import type { ObjectKind, PlacedObject, Settings, TypeSpec, Vec2 } from '@/lib/types';
 import {
@@ -224,6 +225,17 @@ export default function FloorPlanCanvas() {
 
   const ready = size.w > 0 && size.h > 0;
   const mpp = metresPerPixel(viewport, size.w);
+
+  // Publish where the user is looking so newly added objects land on screen
+  // instead of at a fixed point that may be scrolled out of view. In an effect
+  // rather than inline: writing module state during render is impure and would
+  // misbehave under concurrent rendering.
+  useEffect(() => {
+    viewCenter.current = {
+      x: viewport.minX + viewport.width / 2,
+      y: viewport.minY + viewport.height / 2,
+    };
+  }, [viewport]);
 
   /* ---------------- hydrate + sizing ---------------- */
 

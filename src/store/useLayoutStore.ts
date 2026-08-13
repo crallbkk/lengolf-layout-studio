@@ -8,7 +8,10 @@ import {
 } from 'lz-string';
 
 import { CATALOG } from '@/lib/catalog';
+import { SHELL_OUTLINE } from '@/lib/floorplan';
+import { pointInPolygon } from '@/lib/geometry';
 import { conceptLayout } from '@/lib/seed';
+import { viewCenter } from '@/lib/viewCenter';
 import type {
   LayoutSnapshot,
   MeasureState,
@@ -97,6 +100,21 @@ interface LayoutStore {
   resetToConcept(): void;
   clearAll(): void;
   shareUrl(): string;
+}
+
+/** Middle of the main hall — used when we have no better idea. */
+const FALLBACK_DROP: Vec2 = { x: 14.8, y: 8.0 };
+
+/**
+ * Where a newly added object should land: the middle of what the user is
+ * currently looking at, so it is always visible and immediately draggable.
+ * Falls back to the plan centre when the view is parked outside the footprint,
+ * so adding never drops an object straight into an "outside the unit" warning.
+ */
+function dropPoint(): Vec2 {
+  const c = viewCenter.current;
+  if (!c || !pointInPolygon(c, SHELL_OUTLINE)) return FALLBACK_DROP;
+  return c;
 }
 
 const snapshot = (s: LayoutStore): LayoutSnapshot => ({
@@ -243,12 +261,13 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     const count =
       get().objects.filter((o) => o.type === kind).length + 1;
     const id = nanoid(8);
+    const drop = at ?? dropPoint();
     const obj: PlacedObject = {
       id,
       type: kind,
       label: `${spec.label} ${count}`,
-      cx: at?.x ?? 14.8,
-      cy: at?.y ?? 8.0,
+      cx: drop.x,
+      cy: drop.y,
       w: spec.defaultW,
       d: spec.defaultD,
       rotation: 0,
