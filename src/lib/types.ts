@@ -19,6 +19,7 @@ export type ObjectKind =
   | 'pantry'
   | 'service-band'
   | 'store'
+  | 'cart-pillar'
   | 'generic';
 
 export interface PlacedObject {
