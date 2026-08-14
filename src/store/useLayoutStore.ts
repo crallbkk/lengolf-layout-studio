@@ -2,12 +2,9 @@
 
 import { create } from 'zustand';
 import { nanoid } from 'nanoid';
-import {
-  compressToEncodedURIComponent,
-  decompressFromEncodedURIComponent,
-} from 'lz-string';
-
 import { CATALOG } from '@/lib/catalog';
+import { DEFAULT_SETTINGS } from '@/lib/defaults';
+import { decodeShare, encodeShare } from '@/lib/shareCodec';
 import { SHELL_OUTLINE } from '@/lib/floorplan';
 import { pointInPolygon } from '@/lib/geometry';
 import { SEED_VERSION, conceptLayout } from '@/lib/seed';
@@ -38,15 +35,9 @@ const MAX_COORD_M = 1000;
 const MIN_DIM_M = 0.1;
 const MAX_DIM_M = 500;
 
-export const DEFAULT_SETTINGS: Settings = {
-  gridSnapMm: 100,
-  snapEnabled: true,
-  angleSnapDeg: 15,
-  angleSnapEnabled: true,
-  clearanceM: 0.9,
-  showGrid: true,
-  showClearance: false,
-};
+// Re-exported so existing importers keep their import path; the value itself
+// moved to lib/defaults so the share codec can read it without a cycle.
+export { DEFAULT_SETTINGS };
 
 type TypeOverrides = LayoutSnapshot['typeOverrides'];
 
@@ -257,10 +248,13 @@ function parseSnapshot(raw: unknown): LayoutSnapshot | null {
     objects,
     typeOverrides: overrides,
     settings,
-    seedVersion:
-      typeof r.seedVersion === 'number' && Number.isFinite(r.seedVersion)
-        ? r.seedVersion
-        : 0,
+    /**
+     * Clamped like every other number here. Unbounded, a link carrying
+     * `seedVersion: 1e308` pins the browser above SEED_VERSION forever, so it
+     * silently never again notices a published layout — the one failure in this
+     * parser that persists and has no visible cause.
+     */
+    seedVersion: Math.round(clamp(r.seedVersion, 0, 0, 1_000_000)),
   };
 }
 
@@ -573,9 +567,12 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
       const hash = window.location.hash;
       const match = /[#&]p=([^&]+)/.exec(hash);
       if (match) {
-        const json = decompressFromEncodedURIComponent(match[1]);
-        if (json) {
-          loaded = parseSnapshot(JSON.parse(json));
+        // decodeShare handles both the compact v2 payload and the older
+        // verbatim-snapshot one, and returns raw shape either way — every bound
+        // and clamp still lives in parseSnapshot below.
+        const raw = decodeShare(match[1]);
+        if (raw) {
+          loaded = parseSnapshot(raw);
           fromHash = loaded !== null;
         }
       }
@@ -646,10 +643,26 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
        */
       if (fromHash) {
         try {
+          /**
+           * The share token goes with it.
+           *
+           * Leaving `?k=` behind leaves the URL bar holding a link that opens
+           * the gate but no longer carries a layout — and copying the address
+           * bar is how people re-share. That produced a link which
+           * authenticated successfully and then showed the recipient whatever
+           * was in their OWN localStorage: a wrong answer with no error. A
+           * stripped URL fails visibly instead, and the Share button is the
+           * supported way to pass a layout on.
+           *
+           * It also keeps a credential out of the address bar, the browser
+           * history, and anything the user pastes by hand.
+           */
+          const url = new URL(window.location.href);
+          url.searchParams.delete('k');
           window.history.replaceState(
             null,
             '',
-            window.location.pathname + window.location.search,
+            url.pathname + url.search,
           );
         } catch {
           /* replaceState can throw in exotic embeddings; the layout is already
@@ -690,10 +703,22 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   },
 
   shareUrl() {
-    const payload = compressToEncodedURIComponent(
-      JSON.stringify(snapshot(get())),
-    );
+    const payload = encodeShare(snapshot(get()));
     const { origin, pathname } = window.location;
-    return `${origin}${pathname}#p=${payload}`;
+
+    /**
+     * The share token rides in the QUERY, not the fragment.
+     *
+     * The layout has to stay in the fragment — it is the one part of a URL
+     * browsers never send to a server, so the layout is not uploaded anywhere
+     * and does not land in an access log. But that is also why the gate cannot
+     * authorise on it: proxy.ts never sees `#p=`. Something the server can read
+     * has to say "this person was sent a link", and that means the query.
+     *
+     * Absent in local dev, where there is no gate to get past.
+     */
+    const token = process.env.NEXT_PUBLIC_SHARE_TOKEN;
+    const query = token ? `?k=${encodeURIComponent(token)}` : '';
+    return `${origin}${pathname}${query}#p=${payload}`;
   },
 }));
