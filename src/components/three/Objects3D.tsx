@@ -161,44 +161,112 @@ function FloorFinish({
             <meshStandardMaterial color={palette.brass} side={THREE.DoubleSide} />
           </mesh>
         </group>
+      ) : lounge ? (
+        <SofaArea object={o} palette={palette} />
       ) : (
-        spots.map(([x, z], i) =>
-          lounge ? (
-            // Low seating: an armchair pair and a table top, all well under
-            // sitting-eye height so the glazing behind stays open.
-            <group key={i} position={[x, 0, z]}>
-              {[-0.62, 0.62].map((dx) => (
-                <group key={dx} position={[dx, 0, 0]}>
-                  <mesh position={[0, 0.2, 0]}>
-                    <boxGeometry args={[0.78, 0.4, 0.78]} />
-                    <meshStandardMaterial color={palette.upholstery} roughness={0.95} />
-                  </mesh>
-                  <mesh position={[0, 0.5, -0.3]}>
-                    <boxGeometry args={[0.78, 0.4, 0.18]} />
-                    <meshStandardMaterial color={palette.upholstery} roughness={0.95} />
-                  </mesh>
-                </group>
-              ))}
-              <mesh position={[0, 0.42, 0]}>
-                <cylinderGeometry args={[0.28, 0.28, 0.05, 16]} />
-                <meshStandardMaterial color={palette.timber} roughness={0.7} />
-              </mesh>
-            </group>
-          ) : (
-            <group key={i} position={[x, 0, z]}>
-              <mesh position={[0, 0.53, 0]}>
-                <cylinderGeometry args={[0.05, 0.05, 1.05, 8]} />
-                <meshStandardMaterial color="#3f3f46" />
-              </mesh>
-              <mesh position={[0, 1.06, 0]}>
-                <cylinderGeometry args={[0.32, 0.32, 0.04, 16]} />
-                <meshStandardMaterial color={palette.timber} roughness={0.7} />
-              </mesh>
-            </group>
-          ),
-        )
+        spots.map(([x, z], i) => (
+          <group key={i} position={[x, 0, z]}>
+            <mesh position={[0, 0.53, 0]}>
+              <cylinderGeometry args={[0.05, 0.05, 1.05, 8]} />
+              <meshStandardMaterial color="#3f3f46" />
+            </mesh>
+            <mesh position={[0, 1.06, 0]}>
+              <cylinderGeometry args={[0.32, 0.32, 0.04, 16]} />
+              <meshStandardMaterial color={palette.timber} roughness={0.7} />
+            </mesh>
+          </group>
+        ))
       )}
     </>
+  );
+}
+
+/**
+ * A lounge as an actual seating arrangement, wrapping the window.
+ *
+ * The previous version dropped one armchair pair per 3 m of zone, which in a
+ * 3.5 m VIP lounge is a single pair marooned in the middle of an empty floor —
+ * "a full sofa area around the window" it is not. A lounge on glazing is a
+ * banquette along the glass with a return down one side, tables in front of it
+ * and loose chairs facing back into the room.
+ *
+ * Local -z is the window side. Every lounge zone in this plan sits with its
+ * back to the north glazing, which is the only glazing the layout puts a lounge
+ * against, so that holds without asking the shell.
+ */
+function SofaArea({
+  object: o,
+  palette,
+}: {
+  object: PlacedObject;
+  palette: Palette;
+}) {
+  const SEAT_H = 0.42;
+  const SEAT_D = 0.72;
+  const BACK_H = 0.78;
+  const runW = o.w * 0.92;
+  const returnD = Math.min(o.d * 0.55, 2.2);
+  const tableCount = Math.max(1, Math.round(runW / 2.1));
+
+  const velvet = (
+    <meshStandardMaterial color={palette.upholstery} roughness={0.95} />
+  );
+
+  return (
+    <group>
+      {/* Banquette along the glazing. */}
+      <group position={[0, 0, -o.d / 2 + SEAT_D / 2 + 0.1]}>
+        <mesh position={[0, SEAT_H / 2, 0]}>
+          <boxGeometry args={[runW, SEAT_H, SEAT_D]} />
+          {velvet}
+        </mesh>
+        <mesh position={[0, BACK_H / 2 + SEAT_H / 2, -SEAT_D / 2 + 0.09]}>
+          <boxGeometry args={[runW, BACK_H, 0.18]} />
+          {velvet}
+        </mesh>
+      </group>
+
+      {/* Return down the side, so it reads as wrapping the corner. */}
+      <group position={[-o.w / 2 + SEAT_D / 2 + 0.1, 0, -o.d / 2 + returnD / 2 + 0.6]}>
+        <mesh position={[0, SEAT_H / 2, 0]}>
+          <boxGeometry args={[SEAT_D, SEAT_H, returnD]} />
+          {velvet}
+        </mesh>
+        <mesh position={[-SEAT_D / 2 + 0.09, BACK_H / 2 + SEAT_H / 2, 0]}>
+          <boxGeometry args={[0.18, BACK_H, returnD]} />
+          {velvet}
+        </mesh>
+      </group>
+
+      {/* Low tables in front of the banquette. */}
+      {Array.from({ length: tableCount }, (_, i) => (
+        <mesh
+          key={i}
+          position={[
+            -runW / 2 + (runW / tableCount) * (i + 0.5),
+            0.4,
+            -o.d / 2 + SEAT_D + 0.65,
+          ]}
+        >
+          <cylinderGeometry args={[0.34, 0.34, 0.06, 20]} />
+          <meshStandardMaterial color={palette.timber} roughness={0.7} />
+        </mesh>
+      ))}
+
+      {/* Loose armchairs facing back to the window. */}
+      {[-0.9, 0.9].map((dx) => (
+        <group key={dx} position={[dx, 0, -o.d / 2 + SEAT_D + 1.55]}>
+          <mesh position={[0, 0.21, 0]}>
+            <boxGeometry args={[0.74, 0.42, 0.74]} />
+            {velvet}
+          </mesh>
+          <mesh position={[0, 0.62, 0.28]}>
+            <boxGeometry args={[0.74, 0.42, 0.18]} />
+            {velvet}
+          </mesh>
+        </group>
+      ))}
+    </group>
   );
 }
 

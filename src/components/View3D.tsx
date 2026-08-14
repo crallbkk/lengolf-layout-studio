@@ -34,6 +34,7 @@ const PRESETS: Array<{ key: CameraViewKey; label: string; walk: boolean }> = [
   { key: 'entrance', label: 'Entrance', walk: true },
   { key: 'bayRun', label: 'Bay run', walk: true },
   { key: 'glazing', label: 'Plaza glazing', walk: true },
+  { key: 'vip', label: 'VIP', walk: true },
 ];
 
 const CHIP =
