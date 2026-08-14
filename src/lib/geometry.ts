@@ -141,13 +141,36 @@ function project(poly: Vec2[], axis: Vec2): { min: number; max: number } {
   return { min, max };
 }
 
+/** Exact distance between two DISJOINT convex polygons: min over edge pairs. */
+function convexEdgeDistance(a: Vec2[], b: Vec2[]): number {
+  let min = Infinity;
+  for (let i = 0; i < a.length; i++) {
+    const a1 = a[i];
+    const a2 = a[(i + 1) % a.length];
+    for (let j = 0; j < b.length; j++) {
+      const d = segmentSegmentDistance(a1, a2, b[j], b[(j + 1) % b.length]);
+      if (d < min) min = d;
+    }
+  }
+  return min;
+}
+
 /**
- * Signed separation between two convex polygons along their best axis.
- * Negative => overlapping, and the magnitude is the penetration depth.
- * Positive => the size of the real gap between them, in metres.
+ * Signed separation between two convex polygons.
+ * Negative => overlapping, and the magnitude is the exact penetration depth.
+ * Positive => the exact closest distance between them, in metres.
  *
  * One function answers both "do these collide?" and "is the clearance
  * satisfied?", which keeps the two checks from ever disagreeing.
+ *
+ * The two branches need different machinery, and conflating them was a real
+ * bug: an SAT axis gap is only a LOWER bound on the distance between disjoint
+ * polygons (the vertex-vertex closest-feature case has no face-normal
+ * witness), and returning the first positive axis found made the answer depend
+ * on argument order — diagonal bay pairs raised clearance warnings quoting
+ * gaps that did not exist. So SAT decides overlap (its penetration depth IS
+ * exact, since the MTV lies on a face normal), and disjoint pairs get the true
+ * min edge-pair distance instead.
  */
 export function convexSeparation(a: Vec2[], b: Vec2[]): number {
   const axes = [...axesOf(a), ...axesOf(b)];
@@ -157,8 +180,8 @@ export function convexSeparation(a: Vec2[], b: Vec2[]): number {
     const pb = project(b, axis);
     // Gap along this axis; positive means disjoint on this axis.
     const gap = Math.max(pa.min - pb.max, pb.min - pa.max);
+    if (gap > 0) return convexEdgeDistance(a, b); // disjoint: report the true gap
     if (gap > best) best = gap;
-    if (gap > 0) return gap; // separated: this axis proves it, stop early
   }
   return best;
 }

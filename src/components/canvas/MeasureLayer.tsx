@@ -1,5 +1,7 @@
 'use client';
 
+import { memo } from 'react';
+
 import { dist } from '@/lib/geometry';
 import type { MeasureState, Vec2 } from '@/lib/types';
 import { px, type Viewport } from '@/lib/viewport';
@@ -56,7 +58,7 @@ interface MeasureLayerProps {
   pixelWidth: number;
 }
 
-export default function MeasureLayer({
+function MeasureLayer({
   measure,
   viewport,
   pixelWidth,
@@ -150,3 +152,11 @@ export default function MeasureLayer({
     </g>
   );
 }
+
+/**
+ * Static relative to a drag: these layers depend only on the viewport (and the
+ * measure state), so without memo they rebuilt their whole element tree on
+ * every pointer frame of a move — the shell path, ~55 grid lines and the scale
+ * bar, all re-created to render identically.
+ */
+export default memo(MeasureLayer);

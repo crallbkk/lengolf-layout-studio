@@ -1,5 +1,7 @@
 'use client';
 
+import { memo } from 'react';
+
 import {
   COLUMNS,
   FIXED_OBSTACLES,
@@ -31,7 +33,7 @@ interface ShellLayerProps {
   pixelWidth: number;
 }
 
-export default function ShellLayer({ viewport, pixelWidth }: ShellLayerProps) {
+function ShellLayer({ viewport, pixelWidth }: ShellLayerProps) {
   const obstacleFont = px(9, viewport, pixelWidth);
 
   return (
@@ -143,3 +145,11 @@ export default function ShellLayer({ viewport, pixelWidth }: ShellLayerProps) {
     </g>
   );
 }
+
+/**
+ * Static relative to a drag: these layers depend only on the viewport (and the
+ * measure state), so without memo they rebuilt their whole element tree on
+ * every pointer frame of a move — the shell path, ~55 grid lines and the scale
+ * bar, all re-created to render identically.
+ */
+export default memo(ShellLayer);

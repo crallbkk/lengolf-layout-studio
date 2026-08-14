@@ -12,6 +12,7 @@ function CatalogRow({ kind }: { kind: ObjectKind }) {
   const spec = useSpec(kind);
   const addObject = useLayoutStore((s) => s.addObject);
   const setTypeMinimums = useLayoutStore((s) => s.setTypeMinimums);
+  const beginChange = useLayoutStore((s) => s.beginChange);
   const resetTypeMinimums = useLayoutStore((s) => s.resetTypeMinimums);
   const [open, setOpen] = useState(false);
 
@@ -56,17 +57,19 @@ function CatalogRow({ kind }: { kind: ObjectKind }) {
               label="Min width"
               value={spec.minW}
               unit="m"
-              min={0.01}
+              min={0.1}
               step={0.05}
-              onCommit={(n) => setTypeMinimums(kind, n, spec.minD)}
+              onCommit={(n, transient) => setTypeMinimums(kind, n, spec.minD, { transient })}
+              onEditBegin={beginChange}
             />
             <NumberField
               label="Min depth"
               value={spec.minD}
               unit="m"
-              min={0.01}
+              min={0.1}
               step={0.05}
-              onCommit={(n) => setTypeMinimums(kind, spec.minW, n)}
+              onCommit={(n, transient) => setTypeMinimums(kind, spec.minW, n, { transient })}
+              onEditBegin={beginChange}
             />
           </div>
           <div className="mt-1.5 flex items-center justify-between gap-2">

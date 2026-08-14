@@ -183,3 +183,44 @@ describe('helpers', () => {
     expect(polygonArea(p)).toBeCloseTo(12, 10);
   });
 });
+
+describe('convexSeparation reports the TRUE distance when disjoint', () => {
+  /**
+   * Regression: the old implementation returned the first positive SAT axis
+   * gap. An axis gap is only a LOWER bound on distance for disjoint convex
+   * polygons (the vertex-vertex closest-feature case has no face-normal
+   * witness), so it under-reported gaps and — because of the early exit — gave
+   * different answers depending on argument order.
+   */
+  it('matches the true diagonal distance, not an axis projection', () => {
+    // Spans x 0..4.5, y 0..6.3 and x 5.2..9.7, y 7.0..13.3.
+    const a = corners(box(2.25, 3.15, 4.5, 6.3));
+    const b = corners(box(7.45, 10.15, 4.5, 6.3));
+    // Closest features are the corners (4.5, 6.3) and (5.2, 7.0).
+    const expected = Math.hypot(5.2 - 4.5, 7.0 - 6.3);
+    expect(convexSeparation(a, b)).toBeCloseTo(expected, 9);
+    // The y-axis projection gap alone is 0.7 — the old wrong answer.
+    expect(convexSeparation(a, b)).toBeGreaterThan(0.7);
+  });
+
+  it('is order-independent for rotated boxes', () => {
+    const p = corners(box(0, 0, 4.5, 6.3, 30));
+    const q = corners(box(6.2, 4.6, 4.5, 6.3, 0));
+    const ab = convexSeparation(p, q);
+    const ba = convexSeparation(q, p);
+    expect(ab).toBeCloseTo(ba, 9);
+    expect(ab).toBeGreaterThan(1.5);
+  });
+
+  it('still reports exact penetration depth when overlapping', () => {
+    const a = corners(box(0, 0, 2, 2));
+    const b = corners(box(1.5, 0, 2, 2));
+    expect(convexSeparation(a, b)).toBeCloseTo(-0.5, 10);
+  });
+
+  it('still treats touching as separation zero', () => {
+    const a = corners(box(0, 0, 2, 2));
+    const b = corners(box(2, 0, 2, 2));
+    expect(convexSeparation(a, b)).toBeCloseTo(0, 10);
+  });
+});

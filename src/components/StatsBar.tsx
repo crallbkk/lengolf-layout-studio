@@ -2,7 +2,7 @@
 
 import { useMemo, type ReactNode } from 'react';
 
-import { computeWarnings } from '@/lib/collision';
+import { computeWarningsCached } from '@/lib/collision';
 import { computeStats } from '@/lib/stats';
 import { useLayoutStore } from '@/store/useLayoutStore';
 
@@ -60,7 +60,7 @@ export default function StatsBar() {
   const settings = useLayoutStore((s) => s.settings);
 
   const warnings = useMemo(
-    () => computeWarnings(objects, settings),
+    () => computeWarningsCached(objects, settings),
     [objects, settings],
   );
   const stats = useMemo(() => computeStats(objects, warnings), [objects, warnings]);

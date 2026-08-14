@@ -1,5 +1,7 @@
 'use client';
 
+import { memo } from 'react';
+
 import { metresPerPixel, px, type Viewport } from '@/lib/viewport';
 
 /**
@@ -23,7 +25,7 @@ interface ScaleBarProps {
   pixelWidth: number;
 }
 
-export default function ScaleBar({ viewport, pixelWidth }: ScaleBarProps) {
+function ScaleBar({ viewport, pixelWidth }: ScaleBarProps) {
   const mpp = metresPerPixel(viewport, pixelWidth);
   if (!Number.isFinite(mpp) || mpp <= 0) return null;
 
@@ -93,3 +95,11 @@ export default function ScaleBar({ viewport, pixelWidth }: ScaleBarProps) {
     </g>
   );
 }
+
+/**
+ * Static relative to a drag: these layers depend only on the viewport (and the
+ * measure state), so without memo they rebuilt their whole element tree on
+ * every pointer frame of a move — the shell path, ~55 grid lines and the scale
+ * bar, all re-created to render identically.
+ */
+export default memo(ScaleBar);

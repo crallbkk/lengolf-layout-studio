@@ -318,3 +318,49 @@ describe('the shipped concept layout', () => {
     expect(soft.filter((x) => x.id.startsWith('clearance:'))).toHaveLength(0);
   });
 });
+
+describe('wall clearance is evaluated per wall', () => {
+  /**
+   * Regression: the wall gap used one global minimum over all shell edges, so
+   * an object flush against ANY wall had a minimum of zero and the `gap > EPS`
+   * test then suppressed the warning for every other wall — hiding exactly the
+   * dead sliver the rule exists to catch.
+   */
+  it('still flags a side-wall sliver on a bay flush to the rear wall', () => {
+    // Bottom edge exactly on the rear wall (y = 13.377), left edge 0.5 m off
+    // the x = 0 shop-front wall.
+    const a = obj('social-bay', 0.5 + 4.5 / 2, 13.377 - 6.3 / 2, 4.5, 6.3);
+    const w = computeWarnings([a], settings);
+    const wall = w.find((x) => x.id === `wall:${a.id}`);
+    expect(wall?.severity).toBe('soft');
+    expect(wall?.message).toContain('0.50 m');
+  });
+
+  it('stays silent when every non-touching wall is beyond the clearance', () => {
+    const a = obj('social-bay', 8, 13.377 - 6.3 / 2, 4.5, 6.3);
+    const w = computeWarnings([a], settings);
+    expect(w.some((x) => x.id === `wall:${a.id}`)).toBe(false);
+  });
+});
+
+describe('round columns are covered conservatively', () => {
+  /**
+   * Regression: an inscribed 16-gon understated a 350 mm column by its 6.7 mm
+   * sagitta, silently accepting real clashes that deep. Circumscribing errs
+   * outward instead — the only safe direction for a structural clash.
+   */
+  it('catches a clash 5 mm inside the true circle near a mid-face angle', () => {
+    const r = 0.35;
+    const ang = Math.PI / 16; // worst case for an inscribed polygon
+    const d = r - 0.005;
+    const a = obj(
+      'generic',
+      1.585 + Math.cos(ang) * d,
+      5.394 + Math.sin(ang) * d,
+      0.3,
+      0.3,
+    );
+    const w = computeWarnings([a], settings);
+    expect(w.some((x) => x.id.startsWith('column:'))).toBe(true);
+  });
+});

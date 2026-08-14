@@ -41,9 +41,14 @@ export const CATALOG: Record<ObjectKind, TypeSpec> = {
     fill: '#e8e2f2',
     stroke: '#6a4fa3',
     text: '#33265c',
-    minW: 5.56,
+    // 5.555, not the 5.56 the concept quotes: 5.56 is that number rounded to
+    // 2 dp, and the traced VIP is exactly 5555 mm. Using the rounded figure as
+    // the minimum made the untouched seed VIP report itself as undersized.
+    // Widening the seed instead is not an option — it would push the bay 5 mm
+    // into the service band and invent an overlap.
+    minW: 5.555,
     minD: 6.3,
-    defaultW: 5.56,
+    defaultW: 5.555,
     defaultD: 6.78,
     defaultSeatingDepth: 2.18,
     capacity: 8,

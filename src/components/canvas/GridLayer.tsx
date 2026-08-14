@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 
 import { COLUMN_GRID_X_M, COLUMN_GRID_Y_M, SHELL_OUTLINE } from '@/lib/floorplan';
 import { bounds } from '@/lib/geometry';
@@ -21,7 +21,7 @@ interface GridLayerProps {
   metresPerPixel: number;
 }
 
-export default function GridLayer({ metresPerPixel }: GridLayerProps) {
+function GridLayer({ metresPerPixel }: GridLayerProps) {
   const extent = useMemo(() => {
     const b = bounds(SHELL_OUTLINE);
     return {
@@ -100,3 +100,11 @@ export default function GridLayer({ metresPerPixel }: GridLayerProps) {
     </g>
   );
 }
+
+/**
+ * Static relative to a drag: these layers depend only on the viewport (and the
+ * measure state), so without memo they rebuilt their whole element tree on
+ * every pointer frame of a move — the shell path, ~55 grid lines and the scale
+ * bar, all re-created to render identically.
+ */
+export default memo(GridLayer);

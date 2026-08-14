@@ -99,7 +99,11 @@ export const BEAM_LINES: BeamLine[] = [
   { id: 'beam-y-b', axis: 'y', at: 13.377, from: 0, to: 29.64 },
   { id: 'beam-x-1', axis: 'x', at: COLUMN_GRID_X_M[0], from: 0, to: 13.377 },
   { id: 'beam-x-2', axis: 'x', at: COLUMN_GRID_X_M[1], from: 0, to: 13.377 },
-  { id: 'beam-x-3', axis: 'x', at: COLUMN_GRID_X_M[2], from: 0, to: 16.919 },
+  // Stops at the rear wall, not the overall 16.919 extent: the shell only
+  // reaches past y = 13.377 in the rear store pocket (x 24.37-29.64), so a
+  // beam on grid x = 19.585 running to 16.919 hung 3.5 m outside the building
+  // in mid-air, visible from the overview camera.
+  { id: 'beam-x-3', axis: 'x', at: COLUMN_GRID_X_M[2], from: 0, to: 13.377 },
 ];
 
 /** Axis-aligned footprint of a beam band, for overlap tests and for meshing. */

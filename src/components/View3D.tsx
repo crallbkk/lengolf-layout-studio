@@ -59,7 +59,13 @@ export default function View3D() {
   const toggle = useViewStore((s) => s.toggle);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const [view, setView] = useState<CameraView>(CAMERA_VIEWS.overview);
+  // Same reason as enterWalk: if walk mode was persisted from a previous
+  // session, opening 3D must not start from the exterior overview camera.
+  const [view, setView] = useState<CameraView>(() =>
+    useViewStore.getState().cameraMode === 'walk'
+      ? CAMERA_VIEWS.entrance
+      : CAMERA_VIEWS.overview,
+  );
   const [viewNonce, setViewNonce] = useState(0);
   const [clearances, setClearances] = useState<ClearanceResult[]>([]);
 
@@ -91,6 +97,17 @@ export default function View3D() {
     setView(CAMERA_VIEWS[key]);
     setViewNonce((n) => n + 1);
   };
+
+  /**
+   * Walk always starts from an interior viewpoint.
+   *
+   * The chip used to flip the mode without touching the view, so WalkControls
+   * mounted and applied whatever `view` held — by default the `overview`
+   * camera, which sits 14 m beyond the south wall at 19 m up. Flattened to eye
+   * height that spawned the walker outside the building, facing its exterior,
+   * with a wall to get through before seeing anything.
+   */
+  const enterWalk = () => applyPreset('entrance', true);
 
   const failing = clearances.filter((c) => !c.ok);
   const tightest = clearances.reduce<ClearanceResult | null>(
@@ -130,7 +147,7 @@ export default function View3D() {
           <button
             type="button"
             className={cameraMode === 'walk' ? CHIP_ON : CHIP}
-            onClick={() => setCameraMode('walk')}
+            onClick={() => enterWalk()}
             aria-pressed={cameraMode === 'walk'}
           >
             Walk

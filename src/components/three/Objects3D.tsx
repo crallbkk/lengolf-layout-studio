@@ -256,7 +256,19 @@ function ObjectMesh({
 
   const wallColor = breach ? '#c2410c' : darken(spec.stroke, 0.15);
 
-  const handleClick = (e: { stopPropagation: () => void; shiftKey?: boolean }) => {
+  const handleClick = (e: {
+    stopPropagation: () => void;
+    shiftKey?: boolean;
+    delta?: number;
+  }) => {
+    /**
+     * A mesh onClick fires on pointerup whenever the release ray still hits the
+     * object, however far the pointer travelled — r3f only drag-guards
+     * onPointerMissed. So orbiting (and in walk mode, every look-around, which
+     * starts on geometry) was mutating the selection. `delta` is the pointer
+     * travel in pixels, exposed for exactly this.
+     */
+    if ((e.delta ?? 0) > 2) return;
     e.stopPropagation();
     onSelect(o.id, e.shiftKey === true);
   };

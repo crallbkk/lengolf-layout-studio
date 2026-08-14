@@ -106,6 +106,12 @@ export const useViewStore = create<ViewState>((set, get) => ({
       if (raw) {
         const r = JSON.parse(raw) as Record<string, unknown>;
         const st = (r.structure ?? {}) as Record<string, unknown>;
+        const slabSoffitM = num(
+          st.slabSoffitM,
+          STRUCTURE_DEFAULTS.slabSoffitM,
+          2.2,
+          8,
+        );
         loaded = {
           cameraMode: r.cameraMode === 'walk' ? 'walk' : 'orbit',
           showCeiling: r.showCeiling === true,
@@ -113,8 +119,20 @@ export const useViewStore = create<ViewState>((set, get) => ({
           showFigures: r.showFigures !== false,
           showLabels: r.showLabels !== false,
           structure: {
-            slabSoffitM: num(st.slabSoffitM, STRUCTURE_DEFAULTS.slabSoffitM, 2.2, 8),
-            beamSoffitM: num(st.beamSoffitM, STRUCTURE_DEFAULTS.beamSoffitM, 2, 8),
+            slabSoffitM,
+            /**
+             * A beam cannot hang above the slab it hangs from. The sliders keep
+             * this invariant, but each field was clamped independently on
+             * hydration, so a stale or hand-edited entry could violate it — and
+             * the failure is in the dangerous direction: beam depth clamps to
+             * zero so the beams vanish from the render, while the clearance
+             * check still reports the beam soffit as the overhead, giving a bay
+             * MORE headroom than the slab physically allows.
+             */
+            beamSoffitM: Math.min(
+              num(st.beamSoffitM, STRUCTURE_DEFAULTS.beamSoffitM, 2, 8),
+              slabSoffitM,
+            ),
             beamWidthM: num(st.beamWidthM, STRUCTURE_DEFAULTS.beamWidthM, 0.2, 2),
             floorBuildUpM: num(st.floorBuildUpM, STRUCTURE_DEFAULTS.floorBuildUpM, 0, 0.5),
             bayPlatformM: num(st.bayPlatformM, STRUCTURE_DEFAULTS.bayPlatformM, 0, 0.6),

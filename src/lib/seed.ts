@@ -37,7 +37,7 @@ const SEEDS: Seed[] = [
   { type: 'putting-green', label: 'Putting green', x: 600, y: 4000, w: 7400, d: 2600 },
   // Butted against the east face of the round column and centred on it, so the
   // cart reads as driving out of the pillar rather than parked beside it.
-  { type: 'cart-pillar', label: 'Cart / DRIVE THRU', x: 1885, y: 4544, w: 2600, d: 1700 },
+  { type: 'cart-pillar', label: 'Cart / DRIVE THRU', x: 1935, y: 4544, w: 2600, d: 1700 },
   { type: 'bar', label: 'Bar', x: 12583, y: 3544, w: 6765, d: 2750 },
   { type: 'lounge', label: 'Lounge', x: 19748, y: 3133, w: 7150, d: 2567 },
   { type: 'pantry', label: 'Pantry', x: 26998, y: 3444, w: 1842, d: 3050 },

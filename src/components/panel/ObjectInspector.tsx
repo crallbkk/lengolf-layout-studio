@@ -89,7 +89,20 @@ function SingleInspector({ object }: { object: PlacedObject }) {
           onChange={(next) => {
             if (next === object.type) return;
             beginChange();
-            updateObject(object.id, { type: next });
+            /**
+             * Re-derive seatingDepth from the new type, in both directions.
+             * Patching only `type` stranded it: a bay changed to a bar kept
+             * drawing its seating split line (ObjectShape keys off the value,
+             * not the type) with the field now hidden, so there was no way to
+             * remove it; and a rectangle changed to a bay got no strip and no
+             * field to add one, permanently unlike every catalog-added bay.
+             */
+            const seating = CATALOG[next].defaultSeatingDepth;
+            updateObject(object.id, {
+              type: next,
+              seatingDepth:
+                seating === undefined ? undefined : Math.min(seating, object.d),
+            });
           }}
         />
 

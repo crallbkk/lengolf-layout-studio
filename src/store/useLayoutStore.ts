@@ -25,6 +25,19 @@ import type {
 const STORAGE_KEY = 'lengolf-floorplan:v1';
 const HISTORY_LIMIT = 100;
 
+/**
+ * Bounds for anything arriving from localStorage or a shared URL. Both are
+ * untrusted input channels, and a hash layout is persisted the moment it is
+ * adopted, so a bad snapshot has to be neutralised at the door rather than
+ * merely survived once.
+ */
+const MAX_OBJECTS = 500;
+const MAX_TEXT_LEN = 500;
+/** The unit is ~30 x 17 m; this is generous headroom, not a plan bound. */
+const MAX_COORD_M = 1000;
+const MIN_DIM_M = 0.1;
+const MAX_DIM_M = 500;
+
 export const DEFAULT_SETTINGS: Settings = {
   gridSnapMm: 100,
   snapEnabled: true,
@@ -68,6 +81,14 @@ interface LayoutStore {
     patch: Partial<PlacedObject>,
     opts?: { transient?: boolean },
   ): void;
+  /**
+   * Flush transient gesture writes to storage in one go. Transient updates
+   * deliberately skip persisting, so a gesture ends with the store correct but
+   * unsaved; settling it object-by-object cost a full JSON.stringify of the
+   * whole layout per object, which on releasing a 20-object multi-drag was 20
+   * serializations in a single pointerup.
+   */
+  commitTransient(): void;
   removeObject(id: string): void;
   removeSelected(): void;
   duplicateObject(id: string): string | null;
@@ -84,9 +105,17 @@ interface LayoutStore {
 
   /* ---- type catalog + settings ---- */
   specFor(kind: ObjectKind): TypeSpec;
-  setTypeMinimums(kind: ObjectKind, minW: number, minD: number): void;
+  setTypeMinimums(
+    kind: ObjectKind,
+    minW: number,
+    minD: number,
+    opts?: { transient?: boolean },
+  ): void;
   resetTypeMinimums(kind: ObjectKind): void;
-  updateSettings(patch: Partial<Settings>): void;
+  updateSettings(
+    patch: Partial<Settings>,
+    opts?: { transient?: boolean },
+  ): void;
 
   /* ---- measure ---- */
   setMeasureActive(active: boolean): void;
@@ -145,28 +174,40 @@ function parseSnapshot(raw: unknown): LayoutSnapshot | null {
   const num = (v: unknown, fallback: number) =>
     typeof v === 'number' && Number.isFinite(v) ? v : fallback;
 
+  /** Clamped read. Every numeric field goes through this, never plain `num`. */
+  const clamp = (v: unknown, fallback: number, lo: number, hi: number) =>
+    Math.min(hi, Math.max(lo, num(v, fallback)));
+
+  const text = (v: unknown, fallback: string) =>
+    typeof v === 'string' ? v.slice(0, MAX_TEXT_LEN) : fallback;
+
   const objects: PlacedObject[] = [];
   for (const item of r.objects) {
+    // A hostile or corrupt snapshot must not be able to wedge the app. The
+    // warning pass is O(n^2) and runs on every frame, so an unbounded object
+    // count freezes the tab — and because a hash layout is persisted on
+    // arrival, the freeze would survive a reload with a clean URL.
+    if (objects.length >= MAX_OBJECTS) break;
     if (!item || typeof item !== 'object') continue;
     const o = item as Record<string, unknown>;
     const type = o.type as ObjectKind;
     if (!type || !(type in CATALOG)) continue;
-    const w = num(o.w, CATALOG[type].defaultW);
-    const d = num(o.d, CATALOG[type].defaultD);
-    if (w <= 0 || d <= 0) continue;
+    const w = clamp(o.w, CATALOG[type].defaultW, MIN_DIM_M, MAX_DIM_M);
+    const d = clamp(o.d, CATALOG[type].defaultD, MIN_DIM_M, MAX_DIM_M);
     objects.push({
-      id: typeof o.id === 'string' && o.id ? o.id : nanoid(8),
+      id: typeof o.id === 'string' && o.id ? o.id.slice(0, 64) : nanoid(8),
       type,
-      label: typeof o.label === 'string' ? o.label : CATALOG[type].label,
-      cx: num(o.cx, 0),
-      cy: num(o.cy, 0),
+      label: text(o.label, CATALOG[type].label),
+      cx: clamp(o.cx, 0, -MAX_COORD_M, MAX_COORD_M),
+      cy: clamp(o.cy, 0, -MAX_COORD_M, MAX_COORD_M),
       w,
       d,
-      rotation: num(o.rotation, 0),
+      // Normalised rather than clamped: 720 is a legitimate way to say 0.
+      rotation: ((num(o.rotation, 0) % 360) + 360) % 360,
       locked: o.locked === true,
-      notes: typeof o.notes === 'string' ? o.notes : '',
+      notes: text(o.notes, ''),
       ...(typeof o.seatingDepth === 'number' && Number.isFinite(o.seatingDepth)
-        ? { seatingDepth: o.seatingDepth }
+        ? { seatingDepth: Math.min(Math.max(o.seatingDepth, 0), d) }
         : {}),
     });
   }
@@ -176,20 +217,29 @@ function parseSnapshot(raw: unknown): LayoutSnapshot | null {
     for (const [k, v] of Object.entries(r.typeOverrides)) {
       if (!(k in CATALOG) || !v || typeof v !== 'object') continue;
       const ov = v as Record<string, unknown>;
-      overrides[k as ObjectKind] = {
-        minW: num(ov.minW, CATALOG[k as ObjectKind].minW),
-        minD: num(ov.minD, CATALOG[k as ObjectKind].minD),
+      const kind = k as ObjectKind;
+      // Same floor setTypeMinimums enforces. A negative minimum would silently
+      // disable every "below minimum" warning for that type.
+      overrides[kind] = {
+        minW: clamp(ov.minW, CATALOG[kind].minW, MIN_DIM_M, MAX_DIM_M),
+        minD: clamp(ov.minD, CATALOG[kind].minD, MIN_DIM_M, MAX_DIM_M),
       };
     }
   }
 
+  /**
+   * Settings are clamped to the same bounds the UI enforces. The parser was
+   * strictly more permissive than any legitimate writer, and a persisted
+   * `gridSnapMm: 0` left arrow-key nudging silently dead while dragging still
+   * worked — a half-broken state with no way to notice or undo it.
+   */
   const s = (r.settings ?? {}) as Record<string, unknown>;
   const settings: Settings = {
-    gridSnapMm: num(s.gridSnapMm, DEFAULT_SETTINGS.gridSnapMm),
+    gridSnapMm: clamp(s.gridSnapMm, DEFAULT_SETTINGS.gridSnapMm, 1, 5000),
     snapEnabled: s.snapEnabled !== false,
-    angleSnapDeg: num(s.angleSnapDeg, DEFAULT_SETTINGS.angleSnapDeg),
+    angleSnapDeg: clamp(s.angleSnapDeg, DEFAULT_SETTINGS.angleSnapDeg, 1, 180),
     angleSnapEnabled: s.angleSnapEnabled !== false,
-    clearanceM: num(s.clearanceM, DEFAULT_SETTINGS.clearanceM),
+    clearanceM: clamp(s.clearanceM, DEFAULT_SETTINGS.clearanceM, 0, 20),
     showGrid: s.showGrid !== false,
     showClearance: s.showClearance === true,
   };
@@ -294,6 +344,10 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     if (!opts?.transient) persist(get());
   },
 
+  commitTransient() {
+    persist(get());
+  },
+
   removeObject(id) {
     const target = get().objects.find((o) => o.id === id);
     if (!target || target.locked) return;
@@ -315,7 +369,10 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     const ids = new Set(removable.map((o) => o.id));
     set((st) => ({
       objects: st.objects.filter((o) => !ids.has(o.id)),
-      selectedIds: [],
+      // Keep the locked survivors selected. The panel tells the user "locked
+      // objects are not deleted", so clearing the whole selection loses track
+      // of exactly the objects the guard just protected.
+      selectedIds: st.selectedIds.filter((id) => !ids.has(id)),
     }));
     persist(get());
   },
@@ -422,8 +479,11 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     return ov ? { ...base, minW: ov.minW, minD: ov.minD } : base;
   },
 
-  setTypeMinimums(kind, minW, minD) {
-    get().beginChange();
+  setTypeMinimums(kind, minW, minD, opts) {
+    // Mirrors updateObject's contract: a transient write is one keystroke in a
+    // field, so it neither pushes history nor pays a full serialisation. The
+    // caller pushes history once when the edit begins.
+    if (!opts?.transient) get().beginChange();
     set((s) => ({
       typeOverrides: {
         ...s.typeOverrides,
@@ -433,7 +493,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
         },
       },
     }));
-    persist(get());
+    if (!opts?.transient) persist(get());
   },
 
   resetTypeMinimums(kind) {
@@ -446,10 +506,10 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     persist(get());
   },
 
-  updateSettings(patch) {
-    get().beginChange();
+  updateSettings(patch, opts) {
+    if (!opts?.transient) get().beginChange();
     set((s) => ({ settings: { ...s.settings, ...patch } }));
-    persist(get());
+    if (!opts?.transient) persist(get());
   },
 
   /* ---------------- measure ---------------- */
@@ -489,12 +549,16 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     // A shared link always wins over local state — that is the whole point of
     // sending someone the link.
     let loaded: LayoutSnapshot | null = null;
+    let fromHash = false;
     try {
       const hash = window.location.hash;
       const match = /[#&]p=([^&]+)/.exec(hash);
       if (match) {
         const json = decompressFromEncodedURIComponent(match[1]);
-        if (json) loaded = parseSnapshot(JSON.parse(json));
+        if (json) {
+          loaded = parseSnapshot(JSON.parse(json));
+          fromHash = loaded !== null;
+        }
       }
     } catch {
       /* malformed link — fall through to local state */
@@ -524,6 +588,26 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
        * drop back to a stale layout.
        */
       persist(get());
+
+      /**
+       * Strip the #p= payload once adopted, or the link becomes a trap: the
+       * hash outranks localStorage on every load, so refreshing an hour into
+       * editing a shared layout would re-adopt the ORIGINAL snapshot and
+       * persist it over the work — silently, and unrecoverably, since history
+       * is in-memory only. Bookmarking the link made it recur.
+       */
+      if (fromHash) {
+        try {
+          window.history.replaceState(
+            null,
+            '',
+            window.location.pathname + window.location.search,
+          );
+        } catch {
+          /* replaceState can throw in exotic embeddings; the layout is already
+             adopted and persisted, so carrying on is correct. */
+        }
+      }
     } else {
       set({ objects: conceptLayout(), hydrated: true });
       persist(get());

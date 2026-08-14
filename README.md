@@ -235,6 +235,13 @@ against rotated boxes that axis-aligned tests get wrong), footprint containment 
 24,370 notch, the clearance and tolerance rules, and a guard that the shipped concept layout
 produces no hard warnings.
 
+## Known open items
+
+[`docs/REVIEW-BACKLOG.md`](docs/REVIEW-BACKLOG.md) lists what a four-way codebase
+audit found and did not fix — mostly 3D render-loop allocations and a few UX
+rough edges. Every entry has a concrete repro. None are correctness bugs in the
+plan geometry or the warning engine; those were fixed.
+
 ## Not in v1
 
 Export, authentication, real-time multi-user sync (sharing is via URL, not a live session),

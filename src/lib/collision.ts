@@ -9,6 +9,7 @@ import { CATALOG, isBay } from './catalog';
 import { VOLUMES } from './volume';
 import type { PlacedObject, Settings, Warning } from './types';
 import {
+  bounds,
   convexSeparation,
   corners,
   pointInPolygon,
@@ -17,6 +18,20 @@ import {
   segmentSegmentDistance,
   segmentsIntersect,
 } from './geometry';
+
+type AABB = ReturnType<typeof bounds>;
+
+/**
+ * Gap between two AABBs along their most separated axis. Because an axis gap
+ * is a lower bound on true distance, `aabbGap(a, b) > t` PROVES the true
+ * distance exceeds t — which is all the pair loop needs to skip the exact
+ * (and much more expensive) SAT + edge-distance work for far-apart pairs.
+ */
+function aabbGap(a: AABB, b: AABB): number {
+  const gx = Math.max(a.minX - b.maxX, b.minX - a.maxX);
+  const gy = Math.max(a.minY - b.maxY, b.minY - a.maxY);
+  return Math.max(gx, gy);
+}
 
 /**
  * 1 mm. Below any tolerance that means anything on a floor plan, but far above
@@ -40,28 +55,29 @@ const OBSTACLE_POLYS = FIXED_OBSTACLES.map((o) => ({
 
 /**
  * Structural columns as convex polygons. Round columns become a 16-gon
- * inscribed in the circle — at a 350 mm radius that understates the true
- * footprint by under 1 mm, which is well inside the tolerance everything else
- * here works to, and it keeps every shape convex so SAT stays valid.
+ * CIRCUMSCRIBED about the circle (radius r / cos(pi/16)), not inscribed: an
+ * inscribed polygon understates the footprint by the sagitta, 6.7 mm at
+ * r = 350 mm, silently accepting real clashes that deep. Circumscribed
+ * over-covers by at most ~6.9 mm at the vertices, which errs on the safe
+ * side — the only acceptable direction for a structural clash.
  */
 const COLUMN_POLYS = COLUMNS.map((c) => {
   const r = c.size / 2;
   if (c.shape === 'circle') {
     const SIDES = 16;
+    const R = r / Math.cos(Math.PI / SIDES);
     const poly: Vec2[] = [];
     for (let i = 0; i < SIDES; i++) {
       const a = (i / SIDES) * Math.PI * 2;
       poly.push({
-        x: c.center.x + r * Math.cos(a),
-        y: c.center.y + r * Math.sin(a),
+        x: c.center.x + R * Math.cos(a),
+        y: c.center.y + R * Math.sin(a),
       });
     }
-    return { id: c.id, poly };
+    return { id: c.id, poly, box: bounds(poly) };
   }
-  return {
-    id: c.id,
-    poly: rectPolygon(c.center.x - r, c.center.y - r, c.size, c.size),
-  };
+  const poly = rectPolygon(c.center.x - r, c.center.y - r, c.size, c.size);
+  return { id: c.id, poly, box: bounds(poly) };
 });
 
 function distanceToShellBoundary(p: Vec2): number {
@@ -85,16 +101,27 @@ function pointEscapes(p: Vec2): boolean {
   return distanceToShellBoundary(p) > EPS;
 }
 
-/** Smallest gap from an object's outline to the shell wall, in metres. */
-function distanceToShell(poly: Vec2[]): number {
+/**
+ * Gap to the nearest shell wall the object is NOT touching, in metres.
+ *
+ * Evaluated per shell edge, not as one global minimum: a bay flush against the
+ * rear wall has a global minimum of zero, and a single-minimum version let that
+ * zero suppress the sliver warning against every OTHER wall — a bay flush to
+ * the rear with a 0.5 m dead strip to the side wall reported nothing, which is
+ * exactly the strip this rule exists to catch. Touching edges (<= EPS) are
+ * excluded per edge instead of short-circuiting the whole test.
+ */
+function nearestNonTouchingWallGap(poly: Vec2[]): number {
   let min = Infinity;
-  for (let i = 0; i < poly.length; i++) {
-    const a = poly[i];
-    const b = poly[(i + 1) % poly.length];
-    for (const [c, d] of SHELL_EDGES) {
+  for (const [c, d] of SHELL_EDGES) {
+    let edgeMin = Infinity;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
       const dd = segmentSegmentDistance(a, b, c, d);
-      if (dd < min) min = dd;
+      if (dd < edgeMin) edgeMin = dd;
     }
+    if (edgeMin > EPS && edgeMin < min) min = edgeMin;
   }
   return min;
 }
@@ -134,14 +161,18 @@ export function computeWarnings(
   const clearance = settings.clearanceM;
 
   const polys = new Map<string, Vec2[]>();
-  for (const o of objects) polys.set(o.id, corners(o));
+  const boxes = new Map<string, AABB>();
+  for (const o of objects) {
+    const poly = corners(o);
+    polys.set(o.id, poly);
+    boxes.set(o.id, bounds(poly));
+  }
 
   /* ---- object vs object ---- */
   for (let i = 0; i < objects.length; i++) {
     for (let j = i + 1; j < objects.length; j++) {
       const a = objects[i];
       const b = objects[j];
-      const sep = convexSeparation(polys.get(a.id)!, polys.get(b.id)!);
 
       /**
        * A floor finish is a surface, and things stand on surfaces. The cart
@@ -155,6 +186,12 @@ export function computeWarnings(
       const aFloor = VOLUMES[a.type].mass === 'floor-finish';
       const bFloor = VOLUMES[b.type].mass === 'floor-finish';
       if (aFloor !== bFloor) continue;
+
+      // Far-apart pairs can neither overlap nor violate clearance; prove it
+      // with two subtractions instead of the full SAT + edge-distance pass.
+      if (aabbGap(boxes.get(a.id)!, boxes.get(b.id)!) > clearance) continue;
+
+      const sep = convexSeparation(polys.get(a.id)!, polys.get(b.id)!);
 
       if (sep < -EPS) {
         warnings.push({
@@ -206,8 +243,8 @@ export function computeWarnings(
        * therefore neutral — it reports the distance rather than declaring the
        * space wasted.
        */
-      const gap = distanceToShell(poly);
-      if (gap > EPS && gap < clearance) {
+      const gap = nearestNonTouchingWallGap(poly);
+      if (gap < clearance) {
         warnings.push({
           id: `wall:${o.id}`,
           severity: 'soft',
@@ -229,7 +266,11 @@ export function computeWarnings(
      * a warning list trains people to stop reading warnings.
      */
     if (VOLUMES[o.type].mass !== 'floor-finish') {
+      const box = boxes.get(o.id)!;
       for (const col of COLUMN_POLYS) {
+        // Only overlap matters here, so AABB-disjoint columns are skipped
+        // before any SAT work — most objects are far from most columns.
+        if (aabbGap(box, col.box) > EPS) continue;
         const sep = convexSeparation(poly, col.poly);
         if (sep < -EPS) {
           warnings.push({
@@ -305,4 +346,28 @@ export function softWarningIds(warnings: Warning[]): Set<string> {
     if (w.severity === 'soft') w.objectIds.forEach((id) => s.add(id));
   }
   return s;
+}
+
+/**
+ * Last computed result, keyed on identity of the inputs.
+ *
+ * StatsBar and WarningsPanel each need the warning list and each had their own
+ * useMemo, so every drag frame ran the whole O(n^2) pass twice. Zustand hands
+ * both the same `objects` and `settings` references, so a one-entry identity
+ * cache collapses that to once — and any additional consumer added later is
+ * free rather than another full pass.
+ */
+let cacheObjects: PlacedObject[] | null = null;
+let cacheSettings: Settings | null = null;
+let cacheResult: Warning[] = [];
+
+export function computeWarningsCached(
+  objects: PlacedObject[],
+  settings: Settings,
+): Warning[] {
+  if (objects === cacheObjects && settings === cacheSettings) return cacheResult;
+  cacheResult = computeWarnings(objects, settings);
+  cacheObjects = objects;
+  cacheSettings = settings;
+  return cacheResult;
 }

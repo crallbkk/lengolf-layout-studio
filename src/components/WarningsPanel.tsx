@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 
-import { computeWarnings } from '@/lib/collision';
+import { computeWarningsCached } from '@/lib/collision';
 import type { Warning } from '@/lib/types';
 import { useLayoutStore } from '@/store/useLayoutStore';
 
@@ -21,7 +21,7 @@ export default function WarningsPanel() {
   const [collapsed, setCollapsed] = useState(false);
 
   const warnings = useMemo(
-    () => computeWarnings(objects, settings),
+    () => computeWarningsCached(objects, settings),
     [objects, settings],
   );
 

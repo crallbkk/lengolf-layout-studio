@@ -99,6 +99,29 @@ export function panBy(v: Viewport, dxWorld: number, dyWorld: number): Viewport {
 }
 
 /**
+ * Keep at least part of the content on screen.
+ *
+ * Nothing bounded position before, only zoom width, so a hard pan left the user
+ * staring at an empty background with no cue that the plan still existed —
+ * recoverable only via Fit, which is exactly the control you cannot find when
+ * the screen is blank. The allowance is half a viewport, so the plan can still
+ * be pushed to an edge to make room for working, just never off entirely.
+ */
+export function clampToContent(v: Viewport, content: Bounds): Viewport {
+  const padX = v.width / 2;
+  const padY = v.height / 2;
+  const minX = Math.min(
+    Math.max(v.minX, content.minX - v.width + padX),
+    content.maxX - padX,
+  );
+  const minY = Math.min(
+    Math.max(v.minY, content.minY - v.height + padY),
+    content.maxY - padY,
+  );
+  return { ...v, minX, minY };
+}
+
+/**
  * Pointer event -> world metres, via the SVG's own CTM. This is authoritative:
  * it survives CSS transforms, device pixel ratio and page scroll without any
  * bookkeeping of our own.

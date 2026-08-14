@@ -79,6 +79,7 @@ export default function SettingsSection() {
   const showClearance = useLayoutStore((s) => s.settings.showClearance);
 
   const updateSettings = useLayoutStore((s) => s.updateSettings);
+  const beginChange = useLayoutStore((s) => s.beginChange);
   const resetToConcept = useLayoutStore((s) => s.resetToConcept);
   const clearAll = useLayoutStore((s) => s.clearAll);
 
@@ -111,7 +112,8 @@ export default function SettingsSection() {
               step={10}
               decimals={0}
               disabled={!snapEnabled}
-              onCommit={(n) => updateSettings({ gridSnapMm: n })}
+              onCommit={(n, transient) => updateSettings({ gridSnapMm: n }, { transient })}
+              onEditBegin={beginChange}
             />
           </div>
         </div>
@@ -142,7 +144,8 @@ export default function SettingsSection() {
             unit="m"
             min={0}
             step={0.05}
-            onCommit={(n) => updateSettings({ clearanceM: n })}
+            onCommit={(n, transient) => updateSettings({ clearanceM: n }, { transient })}
+            onEditBegin={beginChange}
           />
           <p className="mt-0.5 text-[10px] leading-tight text-slate-500">
             Minimum clear gap kept between bays, and between a bay and a wall.

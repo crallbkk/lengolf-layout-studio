@@ -22,19 +22,29 @@ import ShellLayer from './ShellLayer';
 
 import { CATALOG } from '@/lib/catalog';
 import {
-  computeWarnings,
+  computeWarningsCached,
   hardWarningIds,
   softWarningIds,
 } from '@/lib/collision';
 import { SHELL_OUTLINE } from '@/lib/floorplan';
 import { viewCenter } from '@/lib/viewCenter';
-import { bounds, corners, snap, toLocal, toWorld } from '@/lib/geometry';
+import {
+  bounds,
+  corners,
+  polygonsOverlap,
+  rectPolygon,
+  snap,
+  toLocal,
+  toWorld,
+} from '@/lib/geometry';
 import type { ObjectKind, PlacedObject, Settings, TypeSpec, Vec2 } from '@/lib/types';
 import {
+  clampToContent,
   clientToWorld,
   fitToBounds,
   metresPerPixel,
   panBy,
+  px,
   reaspect,
   viewBoxString,
   zoomAt,
@@ -54,6 +64,9 @@ const MIN_SIZE_M = 0.3;
 export const FIT_EVENT = 'floorplan:fit';
 
 const ZOOM_SENSITIVITY = 0.0015;
+
+/** The shell never moves, so its extent is the anchor for viewport clamping. */
+const CONTENT_BOUNDS = bounds(SHELL_OUTLINE);
 
 type DragMode = 'none' | 'pan' | 'move' | 'resize' | 'rotate' | 'marquee';
 
@@ -177,6 +190,12 @@ export default function FloorPlanCanvas() {
   const sizeRef = useRef({ w: 0, h: 0 });
   const spaceRef = useRef(false);
   const fittedRef = useRef(false);
+  /** Live touch points, and the pinch baseline once there are two. */
+  const touchesRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{
+    distance: number;
+    midClient: { x: number; y: number };
+  } | null>(null);
 
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [viewport, setViewport] = useState<Viewport>({
@@ -197,19 +216,34 @@ export default function FloorPlanCanvas() {
 
   /* ---------------- derived ---------------- */
 
-  const specOf = useCallback(
-    (kind: ObjectKind): TypeSpec => {
+  /**
+   * Resolved specs, memoised per override set rather than rebuilt per call.
+   *
+   * The previous version returned a fresh `{...base}` on every call for any
+   * overridden kind, so `memo(ObjectShape)`'s shallow compare always saw a new
+   * `spec` prop and every instance of that kind re-rendered on every pointer
+   * frame. Overriding the most numerous kind killed memoisation for most of
+   * the scene, which is the opposite of what an override should cost.
+   */
+  const specs = useMemo(() => {
+    const out = {} as Record<ObjectKind, TypeSpec>;
+    for (const kind of Object.keys(CATALOG) as ObjectKind[]) {
       const base = CATALOG[kind];
       const ov = typeOverrides[kind];
-      return ov ? { ...base, minW: ov.minW, minD: ov.minD } : base;
-    },
-    [typeOverrides],
+      out[kind] = ov ? { ...base, minW: ov.minW, minD: ov.minD } : base;
+    }
+    return out;
+  }, [typeOverrides]);
+
+  const specOf = useCallback(
+    (kind: ObjectKind): TypeSpec => specs[kind],
+    [specs],
   );
 
   // Recomputed on every transient drag update, which is exactly what makes the
   // red/amber feedback live while an object is still under the cursor.
   const warnings = useMemo(
-    () => computeWarnings(objects, settings),
+    () => computeWarningsCached(objects, settings),
     [objects, settings],
   );
   const hardIds = useMemo(() => hardWarningIds(warnings), [warnings]);
@@ -305,7 +339,7 @@ export default function FloorPlanCanvas() {
       e.preventDefault();
       const anchor = clientToWorld(e.clientX, e.clientY, svgRef.current);
       const factor = Math.exp(e.deltaY * ZOOM_SENSITIVITY);
-      setViewport((v) => zoomAt(v, anchor, factor));
+      setViewport((v) => clampToContent(zoomAt(v, anchor, factor), CONTENT_BOUNDS));
     };
     svg.addEventListener('wheel', onWheel, { passive: false });
     return () => svg.removeEventListener('wheel', onWheel);
@@ -319,6 +353,24 @@ export default function FloorPlanCanvas() {
       const st = useLayoutStore.getState();
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key;
+
+      /**
+       * Nothing that touches history or the object set may run mid-gesture.
+       *
+       * A drag freezes its start state in dragRef.originals and replays it on
+       * every move, so an interleaved store edit is silently overwritten by the
+       * next frame. Ctrl+Z was the worst case: it popped the gesture's own
+       * snapshot into `future`, the next pointermove swallowed the visual undo,
+       * and `historyPushed` stayed true so nothing re-pushed — the gesture's
+       * undo entry was gone while redo now offered a mid-drag position the user
+       * never committed. Held down, it drained the whole undo stack.
+       *
+       * Space and Escape stay live: Space is the pan modifier, and Escape is the
+       * one key that should still get you out.
+       */
+      if (dragRef.current.mode !== 'none' && key !== ' ' && key !== 'Escape') {
+        return;
+      }
 
       if (key === ' ') {
         // Space is the pan modifier; never let it scroll the page — unless a
@@ -471,6 +523,29 @@ export default function FloorPlanCanvas() {
     if (e.button !== 0 && e.button !== 1) return;
 
     /**
+     * Second touch starts a pinch. `touchAction: 'none'` disables the browser's
+     * native pinch on this element, and wheel events never fire from touch, so
+     * without this a tablet had no zoom gesture at all — the plan was stuck at
+     * whatever Fit chose.
+     */
+    if (e.pointerType === 'touch') {
+      touchesRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touchesRef.current.size === 2) {
+        const [p, q] = [...touchesRef.current.values()];
+        pinchRef.current = {
+          distance: Math.hypot(q.x - p.x, q.y - p.y),
+          midClient: { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 },
+        };
+        // Abandon any single-finger gesture the first touch began; a pinch is
+        // never a move/resize, and leaving it live would drag an object along.
+        dragRef.current = idleDrag();
+        setPanning(false);
+        setMarquee(null);
+        return;
+      }
+    }
+
+    /**
      * One gesture at a time. Without this, a second pointerdown mid-drag (a
      * middle-click while dragging, or the second finger of a pinch) replaces
      * dragRef with a fresh state whose `historyPushed` is false — so the final
@@ -483,8 +558,16 @@ export default function FloorPlanCanvas() {
     const st = useLayoutStore.getState();
     const world = clientToWorld(e.clientX, e.clientY, svg);
 
-    // The tape measure owns every click while it is active.
-    if (st.measure.active) {
+    const forcePan = e.button === 1 || spaceRef.current;
+
+    /**
+     * The tape measure owns plain clicks while active — but NOT the pan
+     * gestures. Swallowing those too meant a measuring user could not move the
+     * view at all, so measuring anything longer than the visible screen was
+     * impossible, and the middle-button early return also skipped
+     * preventDefault, letting Chrome start autoscroll mid-measurement.
+     */
+    if (st.measure.active && !forcePan) {
       if (e.button === 0) {
         st.addMeasurePoint(snapPoint(world, stepFor(st.settings, e.altKey)));
       }
@@ -499,8 +582,6 @@ export default function FloorPlanCanvas() {
     d.lastClientX = e.clientX;
     d.lastClientY = e.clientY;
     d.startWorld = world;
-
-    const forcePan = e.button === 1 || spaceRef.current;
 
     if (forcePan || !hit) {
       if (!forcePan && e.shiftKey) {
@@ -578,6 +659,35 @@ export default function FloorPlanCanvas() {
     if (!svg) return;
     const st = useLayoutStore.getState();
 
+    // Pinch: zoom by the distance ratio, pan by the midpoint travel, both
+    // anchored in world space so the content under the fingers stays put.
+    if (e.pointerType === 'touch' && touchesRef.current.has(e.pointerId)) {
+      touchesRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const pinch = pinchRef.current;
+      if (pinch && touchesRef.current.size === 2) {
+        const [p, q] = [...touchesRef.current.values()];
+        const distance = Math.hypot(q.x - p.x, q.y - p.y);
+        const midClient = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+        if (distance > 0 && pinch.distance > 0) {
+          const anchor = clientToWorld(midClient.x, midClient.y, svg);
+          const factor = pinch.distance / distance;
+          const dxPx = midClient.x - pinch.midClient.x;
+          const dyPx = midClient.y - pinch.midClient.y;
+          const pw = sizeRef.current.w;
+          setViewport((v) => {
+            const zoomed = zoomAt(v, anchor, factor);
+            const m = metresPerPixel(zoomed, pw);
+            return clampToContent(
+              panBy(zoomed, dxPx * m, dyPx * m),
+              CONTENT_BOUNDS,
+            );
+          });
+        }
+        pinchRef.current = { distance, midClient };
+        return;
+      }
+    }
+
     if (st.measure.active) {
       const world = clientToWorld(e.clientX, e.clientY, svg);
       st.setMeasureCursor(snapPoint(world, stepFor(st.settings, e.altKey)));
@@ -595,7 +705,7 @@ export default function FloorPlanCanvas() {
       const pw = sizeRef.current.w;
       setViewport((v) => {
         const m = metresPerPixel(v, pw);
-        return panBy(v, dxPx * m, dyPx * m);
+        return clampToContent(panBy(v, dxPx * m, dyPx * m), CONTENT_BOUNDS);
       });
       return;
     }
@@ -643,13 +753,40 @@ export default function FloorPlanCanvas() {
       const handle = d.handle;
       if (!handle || handle === 'rotate') return;
       const axes = HANDLE_AXES[handle];
+      /**
+       * Resize by the local DELTA from where the handle was grabbed, not by the
+       * pointer's absolute local position. The hit target is 22 px against a
+       * 9 px visible grip, so grabbing anywhere off-centre used to teleport the
+       * edge up to ~11 px to the pointer on the very first move — and that jump
+       * was committed to history immediately.
+       */
+      const grab = toLocal(d.startWorld, original);
       const local = toLocal(world, original);
-      const ax = resizeAxis(local.x, axes.hx, original.w, step);
-      const ay = resizeAxis(local.y, axes.hy, original.d, step);
+      const ax = resizeAxis(
+        original.w / 2 * axes.hx + (local.x - grab.x),
+        axes.hx,
+        original.w,
+        step,
+      );
+      const ay = resizeAxis(
+        original.d / 2 * axes.hy + (local.y - grab.y),
+        axes.hy,
+        original.d,
+        step,
+      );
       const centre = toWorld(
         { x: ax.centreOffset, y: ay.centreOffset },
         original,
       );
+      // A sub-snap wiggle resolves to the original geometry; pushing history
+      // for that would add a no-op undo entry AND clear the redo stack.
+      if (
+        !d.historyPushed &&
+        ax.size === original.w &&
+        ay.size === original.d
+      ) {
+        return;
+      }
       ensureHistory(d);
       st.updateObject(
         original.id,
@@ -672,6 +809,9 @@ export default function FloorPlanCanvas() {
         rotation = snap(rotation, st.settings.angleSnapDeg);
       }
       rotation = ((rotation % 360) + 360) % 360;
+      // Same no-op guard as resize: under angle snap, a small wiggle resolves
+      // back to the original angle and must not cost an undo entry.
+      if (!d.historyPushed && rotation === original.rotation) return;
       ensureHistory(d);
       st.updateObject(original.id, { rotation }, { transient: true });
     }
@@ -679,6 +819,14 @@ export default function FloorPlanCanvas() {
 
   const endGesture = (e?: ReactPointerEvent<SVGSVGElement>) => {
     const d = dragRef.current;
+
+    if (e && e.pointerType === 'touch') {
+      touchesRef.current.delete(e.pointerId);
+      // Lifting one finger of a pinch must not resume a stale one-finger
+      // gesture, so the pinch only ends when both fingers are gone.
+      if (touchesRef.current.size < 2) pinchRef.current = null;
+      if (touchesRef.current.size > 0) return;
+    }
 
     /**
      * Only the pointer that started the gesture may end it. A stray pointerup
@@ -700,17 +848,32 @@ export default function FloorPlanCanvas() {
     const st = useLayoutStore.getState();
 
     if (d.mode === 'marquee') {
-      const m = marquee;
-      if (m) {
-        const minX = Math.min(m.a.x, m.b.x);
-        const maxX = Math.max(m.a.x, m.b.x);
-        const minY = Math.min(m.a.y, m.b.y);
-        const maxY = Math.max(m.a.y, m.b.y);
+      /**
+       * Derived from the pointerup event, not the `marquee` React state: that
+       * state is written at continuous priority during pointermove, so the
+       * commit used the last RENDERED rectangle and a fast flick-and-release
+       * selected by a box short of where it was actually let go.
+       */
+      const endWorld = e
+        ? clientToWorld(e.clientX, e.clientY, svgRef.current)
+        : d.startWorld;
+      const minX = Math.min(d.startWorld.x, endWorld.x);
+      const maxX = Math.max(d.startWorld.x, endWorld.x);
+      const minY = Math.min(d.startWorld.y, endWorld.y);
+      const maxY = Math.max(d.startWorld.y, endWorld.y);
+
+      // A Shift+click with no drag is not a marquee. Committing it selected
+      // anything whose bounding box merely contained the click point.
+      const dragged =
+        Math.max(maxX - minX, maxY - minY) > px(3, viewport, sizeRef.current.w);
+
+      if (dragged) {
+        const rect = rectPolygon(minX, minY, maxX - minX, maxY - minY);
         for (const o of st.objects) {
-          const b = bounds(corners(o));
-          const overlaps =
-            b.minX <= maxX && b.maxX >= minX && b.minY <= maxY && b.maxY >= minY;
-          if (overlaps && !st.selectedIds.includes(o.id)) st.select(o.id, true);
+          // True oriented-rectangle test. An AABB test selected rotated objects
+          // the marquee never visually touched.
+          if (!polygonsOverlap(rect, corners(o))) continue;
+          if (!st.selectedIds.includes(o.id)) st.select(o.id, true);
         }
       }
       setMarquee(null);
@@ -718,21 +881,10 @@ export default function FloorPlanCanvas() {
 
     if (d.mode === 'pan') setPanning(false);
 
-    // One final non-transient write per touched object forces the persist that
-    // the transient drag updates deliberately skipped.
-    if (d.historyPushed) {
-      for (const o of d.originals) {
-        const cur = st.objects.find((x) => x.id === o.id);
-        if (!cur) continue;
-        st.updateObject(o.id, {
-          cx: cur.cx,
-          cy: cur.cy,
-          w: cur.w,
-          d: cur.d,
-          rotation: cur.rotation,
-        });
-      }
-    }
+    // The transient writes already left the store correct; this only flushes it
+    // to storage, once, rather than re-writing every object to trigger a
+    // persist each (a full serialisation of the layout per object).
+    if (d.historyPushed) st.commitTransient();
 
     dragRef.current = idleDrag();
   };
