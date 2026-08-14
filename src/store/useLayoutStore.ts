@@ -2,12 +2,9 @@
 
 import { create } from 'zustand';
 import { nanoid } from 'nanoid';
-import {
-  compressToEncodedURIComponent,
-  decompressFromEncodedURIComponent,
-} from 'lz-string';
-
 import { CATALOG } from '@/lib/catalog';
+import { DEFAULT_SETTINGS } from '@/lib/defaults';
+import { decodeShare, encodeShare } from '@/lib/shareCodec';
 import { SHELL_OUTLINE } from '@/lib/floorplan';
 import { pointInPolygon } from '@/lib/geometry';
 import { SEED_VERSION, conceptLayout } from '@/lib/seed';
@@ -38,15 +35,9 @@ const MAX_COORD_M = 1000;
 const MIN_DIM_M = 0.1;
 const MAX_DIM_M = 500;
 
-export const DEFAULT_SETTINGS: Settings = {
-  gridSnapMm: 100,
-  snapEnabled: true,
-  angleSnapDeg: 15,
-  angleSnapEnabled: true,
-  clearanceM: 0.9,
-  showGrid: true,
-  showClearance: false,
-};
+// Re-exported so existing importers keep their import path; the value itself
+// moved to lib/defaults so the share codec can read it without a cycle.
+export { DEFAULT_SETTINGS };
 
 type TypeOverrides = LayoutSnapshot['typeOverrides'];
 
@@ -573,9 +564,12 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
       const hash = window.location.hash;
       const match = /[#&]p=([^&]+)/.exec(hash);
       if (match) {
-        const json = decompressFromEncodedURIComponent(match[1]);
-        if (json) {
-          loaded = parseSnapshot(JSON.parse(json));
+        // decodeShare handles both the compact v2 payload and the older
+        // verbatim-snapshot one, and returns raw shape either way — every bound
+        // and clamp still lives in parseSnapshot below.
+        const raw = decodeShare(match[1]);
+        if (raw) {
+          loaded = parseSnapshot(raw);
           fromHash = loaded !== null;
         }
       }
@@ -690,10 +684,22 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   },
 
   shareUrl() {
-    const payload = compressToEncodedURIComponent(
-      JSON.stringify(snapshot(get())),
-    );
+    const payload = encodeShare(snapshot(get()));
     const { origin, pathname } = window.location;
-    return `${origin}${pathname}#p=${payload}`;
+
+    /**
+     * The share token rides in the QUERY, not the fragment.
+     *
+     * The layout has to stay in the fragment — it is the one part of a URL
+     * browsers never send to a server, so the layout is not uploaded anywhere
+     * and does not land in an access log. But that is also why the gate cannot
+     * authorise on it: proxy.ts never sees `#p=`. Something the server can read
+     * has to say "this person was sent a link", and that means the query.
+     *
+     * Absent in local dev, where there is no gate to get past.
+     */
+    const token = process.env.NEXT_PUBLIC_SHARE_TOKEN;
+    const query = token ? `?k=${encodeURIComponent(token)}` : '';
+    return `${origin}${pathname}${query}#p=${payload}`;
   },
 }));

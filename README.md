@@ -45,6 +45,7 @@ Set these in Vercel → Project → Settings → Environment Variables:
 | --- | --- | --- |
 | `APP_PASSWORD` | yes | The shared password. |
 | `APP_USER` | no | Username, defaults to `lengolf`. |
+| `NEXT_PUBLIC_SHARE_TOKEN` | no | Enables password-free share links. Unset means every link still needs the password. |
 
 Two behaviours worth knowing:
 
@@ -66,6 +67,55 @@ The trade-offs: a native browser dialog instead of a designed form, and signing 
 means closing the browser. It is also one shared secret with no per-user identity or
 audit trail — fine for a small internal team, not a substitute for real auth if this
 ever holds anything more sensitive.
+
+### Share links skip the password
+
+With `NEXT_PUBLIC_SHARE_TOKEN` set, "Share link" produces a URL carrying `?k=<token>`,
+and the gate lets it through without prompting. The token is immediately swapped for
+an HttpOnly cookie, which is what lets the recipient's browser fetch the gated
+`/_next/static` chunks — a query parameter is only on the first request.
+
+Understand what this does and does not protect:
+
+- Someone who has never been sent a link still hits the password. The drawing is not
+  made publicly reachable.
+- **Anyone holding any link has full access**, and can read the token out of the
+  bundle and mint their own links. There is one shared token, because there is no
+  server-side store to keep per-link ones in. Treat a share link as the secret.
+- **Rotating the token is the revocation mechanism**, and it invalidates every
+  outstanding link at once. Because `NEXT_PUBLIC_` values are inlined at build time,
+  rotation needs a redeploy, not just an env change.
+
+The token deliberately uses the same variable on both sides: the client cannot build
+a link without it, so it has to be in the bundle regardless, and a separate
+server-only copy would be two values that must match — rotate one and not the other
+and every new link 401s.
+
+Leave `NEXT_PUBLIC_SHARE_TOKEN` unset if the drawing should never be reachable
+without the password.
+
+## Share link format
+
+A link carries the whole layout in its fragment (`#p=…`), so nothing is uploaded and
+no link ever expires. The fragment is also never sent to a server, which is why the
+authorisation token above has to ride in the query instead.
+
+`src/lib/shareCodec.ts` encodes it. The format drops what the receiver can
+reconstruct rather than compressing harder — ids (regenerated on arrival), objects as
+positional tuples instead of keyed JSON, labels equal to the catalog default, empty
+notes, and settings and type overrides that match the defaults. Measured on the seed
+layout: **1,658 → 637 characters**, 66% smaller.
+
+Two rules for changing it:
+
+- `SHARE_KINDS` is the wire order of object kinds. **Append only, never reorder.**
+  The indices are the format; reordering silently repoints every link ever sent. It
+  is deliberately a separate list from `CATALOG_ORDER`, which orders the side-panel
+  palette — so rearranging the palette for usability cannot corrupt old links.
+  `shareCodec.test.ts` pins the order and fails if a new kind is missing.
+- `decodeShare` returns raw shape, not a validated snapshot. Every bound, clamp and
+  type check stays in `parseSnapshot`, so there is only one validator for untrusted
+  input. Links produced by the previous format still decode.
 
 ## How it works
 
