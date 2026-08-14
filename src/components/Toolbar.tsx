@@ -70,8 +70,8 @@ export default function Toolbar() {
   const shareUrl = useLayoutStore((s) => s.shareUrl);
   const hydrated = useLayoutStore((s) => s.hydrated);
 
-  const publishedUpdate = useLayoutStore((s) => s.publishedUpdate);
-  const loadPublished = useLayoutStore((s) => s.loadPublished);
+  const adoptedPublished = useLayoutStore((s) => s.adoptedPublished);
+  const dismissAdopted = useLayoutStore((s) => s.dismissAdopted);
 
   const viewMode = useViewStore((s) => s.mode);
   const setViewMode = useViewStore((s) => s.setMode);
@@ -241,17 +241,31 @@ export default function Toolbar() {
         </>
       )}
 
-      {/* A newer published layout exists. Offered, not applied: this browser's
-          copy might be someone's afternoon of work. */}
-      {publishedUpdate ? (
-        <button
-          type="button"
-          onClick={loadPublished}
-          title="This browser is showing an older saved layout"
-          className="inline-flex items-center gap-1.5 rounded-md border border-amber-400 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
-        >
-          <span aria-hidden="true">↑</span> Load published layout
-        </button>
+      {/* This browser had an older saved layout and it has been replaced. Say
+          so plainly and put the way back within reach. */}
+      {adoptedPublished ? (
+        <div className="flex items-center gap-1.5 rounded-md border border-amber-400 bg-amber-50 px-2.5 py-1 text-xs text-amber-900">
+          <span aria-hidden="true">↑</span>
+          <span>Updated to the published layout</span>
+          <button
+            type="button"
+            onClick={() => {
+              undo();
+              dismissAdopted();
+            }}
+            className="rounded border border-amber-500 px-1.5 py-0.5 font-medium hover:bg-amber-100"
+          >
+            Keep mine
+          </button>
+          <button
+            type="button"
+            onClick={dismissAdopted}
+            aria-label="Dismiss"
+            className="px-1 font-semibold opacity-60 hover:opacity-100"
+          >
+            ×
+          </button>
+        </div>
       ) : null}
 
       <div className="ml-auto flex items-center gap-2">
