@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 
 import { STRUCTURE_DEFAULTS, type Structure } from '@/lib/volume';
+import type { PaletteMode } from '@/components/three/palette';
 
 /**
  * View state for the 3D mode.
@@ -26,11 +27,13 @@ export interface ViewState {
   showBeams: boolean;
   showFigures: boolean;
   showLabels: boolean;
+  palette: PaletteMode;
   hydrated: boolean;
 
   setMode(mode: ViewMode): void;
   setCameraMode(mode: CameraMode): void;
   setStructure(patch: Partial<Structure>): void;
+  setPalette(mode: PaletteMode): void;
   resetStructure(): void;
   toggle(key: 'showCeiling' | 'showBeams' | 'showFigures' | 'showLabels'): void;
   hydrateView(): void;
@@ -43,6 +46,12 @@ const DEFAULTS = {
   showBeams: true,
   showFigures: true,
   showLabels: true,
+  /**
+   * Schematic by default. A model that always looks finished is how "mood
+   * approved" quietly becomes "layout approved", which this project is under
+   * standing instructions to avoid.
+   */
+  palette: 'schematic' as PaletteMode,
 };
 
 function persist(s: ViewState) {
@@ -57,6 +66,7 @@ function persist(s: ViewState) {
         showBeams: s.showBeams,
         showFigures: s.showFigures,
         showLabels: s.showLabels,
+        palette: s.palette,
       }),
     );
   } catch {
@@ -80,6 +90,11 @@ export const useViewStore = create<ViewState>((set, get) => ({
 
   setCameraMode(cameraMode) {
     set({ cameraMode });
+    persist(get());
+  },
+
+  setPalette(mode) {
+    set({ palette: mode });
     persist(get());
   },
 
@@ -118,6 +133,7 @@ export const useViewStore = create<ViewState>((set, get) => ({
           showBeams: r.showBeams !== false,
           showFigures: r.showFigures !== false,
           showLabels: r.showLabels !== false,
+          palette: r.palette === 'finished' ? 'finished' : 'schematic',
           structure: {
             slabSoffitM,
             /**

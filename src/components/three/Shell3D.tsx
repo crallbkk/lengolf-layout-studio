@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { COLUMNS, FIXED_OBSTACLES } from '@/lib/floorplan';
 import { BEAM_LINES, beamFootprint, type Structure } from '@/lib/volume';
 import { floorGeometry, wallPanels } from './shellGeometry';
+import type { Palette } from './palette';
 
 /**
  * The raw shell: floor, walls, columns, downstand beams, slab.
@@ -18,12 +19,7 @@ import { floorGeometry, wallPanels } from './shellGeometry';
 
 const WALL_THICKNESS = 0.15;
 
-const CONCRETE = '#b9b6ae';
-const BLOCKWORK = '#d7d4cc';
-const SLAB = '#a9a69f';
 const GLASS = '#cfe0e4';
-const GLAZING_FRAME = '#3b3f42';
-const SHOPFRONT_FRAME = '#7d8a7d';
 
 /** Curtain wall module. The site photographs read at roughly this spacing. */
 const MULLION_SPACING_M = 2.7;
@@ -113,10 +109,12 @@ export default function Shell3D({
   structure,
   showCeiling,
   showBeams,
+  palette,
 }: {
   structure: Structure;
   showCeiling: boolean;
   showBeams: boolean;
+  palette: Palette;
 }) {
   const floor = useMemo(() => floorGeometry(), []);
   const panels = useMemo(() => wallPanels(), []);
@@ -129,7 +127,7 @@ export default function Shell3D({
           traced plan and is not worth normalising just to save one face. */}
       <mesh geometry={floor} receiveShadow>
         <meshStandardMaterial
-          color="#e8e6e1"
+          color={palette.floor}
           side={THREE.DoubleSide}
           roughness={0.95}
         />
@@ -148,14 +146,14 @@ export default function Shell3D({
             <boxGeometry
               args={[p.length, structure.beamSoffitM, WALL_THICKNESS]}
             />
-            <meshStandardMaterial color={BLOCKWORK} roughness={0.9} />
+            <meshStandardMaterial color={palette.blockwork} roughness={0.9} />
           </mesh>
         ) : (
           <GlazedWall
             key={p.id}
             panel={p}
             height={structure.slabSoffitM}
-            frame={p.kind === 'shopfront' ? SHOPFRONT_FRAME : GLAZING_FRAME}
+            frame={palette.glazingFrame}
           />
         ),
       )}
@@ -173,7 +171,7 @@ export default function Shell3D({
           ) : (
             <boxGeometry args={[c.size, structure.slabSoffitM, c.size]} />
           )}
-          <meshStandardMaterial color={CONCRETE} roughness={0.9} />
+          <meshStandardMaterial color={palette.column} roughness={0.9} />
         </mesh>
       ))}
 
@@ -184,7 +182,7 @@ export default function Shell3D({
           position={[o.x + o.w / 2, structure.beamSoffitM / 2, o.y + o.d / 2]}
         >
           <boxGeometry args={[o.w, structure.beamSoffitM, o.d]} />
-          <meshStandardMaterial color="#c3bfb6" roughness={0.9} />
+          <meshStandardMaterial color={palette.blockwork} roughness={0.9} />
         </mesh>
       ))}
 
@@ -206,7 +204,7 @@ export default function Shell3D({
                 ]}
               >
                 <boxGeometry args={[w, beamDepth, d]} />
-                <meshStandardMaterial color={SLAB} roughness={0.95} />
+                <meshStandardMaterial color={palette.beam} roughness={0.95} />
               </mesh>
             );
           })
@@ -217,7 +215,7 @@ export default function Shell3D({
       {showCeiling ? (
         <mesh geometry={floor} position={[0, structure.slabSoffitM, 0]}>
           <meshStandardMaterial
-            color={SLAB}
+            color={palette.soffit}
             side={THREE.DoubleSide}
             roughness={1}
           />

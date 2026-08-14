@@ -18,8 +18,22 @@ type Seed = {
   w: number;
   d: number;
   seatingDepth?: number;
+  /** Degrees clockwise on screen, about the object centre. */
+  rotation?: number;
 };
 
+/**
+ * Column references used below, from `COLUMNS` in floorplan.ts. Front of house
+ * has three free-standing columns and the layout is pinned to all three:
+ *
+ *   col-1  round,  (1.585, 5.394)
+ *   col-2  square, (10.585, 5.150)   the green wraps this one, cart on it
+ *   col-3  square, (19.660, 5.320)   the bar ends against this one
+ *
+ * Pinning to structure rather than to round numbers is the point. A column is
+ * the one thing on this plan that cannot move, so anything aligned to one stays
+ * aligned when the 366 sqm survey redraws the boundary.
+ */
 const SEEDS: Seed[] = [
   /**
    * Event floor ON the plaza glazing, putting green pulled back behind it.
@@ -28,25 +42,61 @@ const SEEDS: Seed[] = [
    * Option 2 drawing the rest of this seed comes from. The frontage has to
    * carry people and activity, because that is what a podium landlord wants to
    * see from the plaza; turf against the glass shows the landlord grass.
-   *
-   * The green sits in the middle of the west portion and wraps the round
-   * column at (1.585, 5.394) on purpose — the cart installation stands on it,
-   * emerging from the base of that column.
    */
   { type: 'event-floor', label: 'Event floor', x: 600, y: 400, w: 9400, d: 2900 },
-  { type: 'putting-green', label: 'Putting green', x: 600, y: 4000, w: 7400, d: 2600 },
-  // Butted against the east face of the round column and centred on it, so the
-  // cart reads as driving out of the pillar rather than parked beside it.
-  { type: 'cart-pillar', label: 'Cart / DRIVE THRU', x: 1935, y: 4544, w: 2600, d: 1700 },
-  { type: 'bar', label: 'Bar', x: 12583, y: 3544, w: 6765, d: 2750 },
-  { type: 'lounge', label: 'Lounge', x: 19748, y: 3133, w: 7150, d: 2567 },
+  /**
+   * The green sits in the middle of the room and wraps col-2. It runs east to
+   * exactly 12383, the face of the bar's return wall, so turf and bar meet on a
+   * line rather than leaving a strip too narrow to be anything.
+   */
+  { type: 'putting-green', label: 'Putting green', x: 5500, y: 3900, w: 6883, d: 2700 },
+  /**
+   * Cart emerging from the WEST face of col-2, driving out onto the green —
+   * hence the 180 degree rotation. East would put it through the bar, and the
+   * two clear directions off that column are west and south; south runs into
+   * the bay row.
+   */
+  {
+    type: 'cart-pillar',
+    label: 'Cart / DRIVE THRU',
+    x: 7635,
+    y: 4300,
+    w: 2600,
+    d: 1700,
+    rotation: 180,
+  },
+  /**
+   * Bar aligned to structure at both ends: flush to the return wall at 12383 on
+   * the west, and stopping dead on col-3's west face at 19310 on the east. It
+   * used to run to 19348, which clipped 38 mm into that column.
+   */
+  { type: 'bar', label: 'Bar', x: 12383, y: 3544, w: 6927, d: 2750 },
+  /**
+   * Lounge stops at the movable wall. It was 7150 wide and crossed the line the
+   * partition now runs on; the glazing east of the wall goes to the VIP zone,
+   * which is the reason for having the wall at all.
+   */
+  { type: 'lounge', label: 'Lounge', x: 19748, y: 3133, w: 3537, d: 2567 },
+  /**
+   * Operable partition on the VIP bay's west side, running from the bay all the
+   * way north to the glazing. Closed, it makes the VIP bay, its own stretch of
+   * plaza window and the floor between them one private room; open, the east
+   * end reads as part of the venue.
+   */
+  { type: 'movable-wall', label: 'VIP movable wall', x: 23285, y: 2933, w: 150, d: 3661 },
   { type: 'pantry', label: 'Pantry', x: 26998, y: 3444, w: 1842, d: 3050 },
   { type: 'lockers', label: 'Lockers / merch', x: 100, y: 7077, w: 1385, d: 6200 },
+  /**
+   * Three social, two AI, one VIP — David's 8 August correction. The single AI
+   * bay at Mercury Ville is the busiest of the four and carries most of the
+   * coaching, which is one of the strongest revenue lines. The widths still sum
+   * the same way: 1585 lockers + 27255 enclosures + 800 service = 29640.
+   */
   { type: 'social-bay', label: 'S1', x: 1585, y: 7077, w: 4500, d: 6300, seatingDepth: 1700 },
   { type: 'social-bay', label: 'S2', x: 6085, y: 7077, w: 4500, d: 6300, seatingDepth: 1700 },
   { type: 'social-bay', label: 'S3', x: 10585, y: 7077, w: 4500, d: 6300, seatingDepth: 1700 },
-  { type: 'social-bay', label: 'S4', x: 15085, y: 7077, w: 4500, d: 6300, seatingDepth: 1700 },
-  { type: 'ai-bay', label: 'AI', x: 19585, y: 7077, w: 3700, d: 6300, seatingDepth: 1700 },
+  { type: 'ai-bay', label: 'AI 1', x: 15085, y: 7077, w: 4500, d: 6300, seatingDepth: 1700 },
+  { type: 'ai-bay', label: 'AI 2', x: 19585, y: 7077, w: 3700, d: 6300, seatingDepth: 1700 },
   { type: 'vip-bay', label: 'VIP', x: 23285, y: 6594, w: 5555, d: 6783, seatingDepth: 2183 },
   { type: 'service-band', label: 'Service band', x: 28840, y: 6594, w: 800, d: 10325 },
   { type: 'store', label: 'Store', x: 24370, y: 13377, w: 4470, d: 3542 },
@@ -61,7 +111,7 @@ export function conceptLayout(): PlacedObject[] {
     cy: (s.y + s.d / 2) / 1000,
     w: s.w / 1000,
     d: s.d / 1000,
-    rotation: 0,
+    rotation: s.rotation ?? 0,
     locked: false,
     notes: '',
     ...(s.seatingDepth !== undefined

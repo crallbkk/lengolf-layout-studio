@@ -9,10 +9,14 @@ import type { PlacedObject } from '@/lib/types';
 import {
   VOLUMES,
   bayZones,
+  solidDividers,
+  SCREEN_FRAME_M,
+  COLUMN_PROJECTION_M,
   type ClearanceResult,
   type Structure,
 } from '@/lib/volume';
 import { planAngleToYaw } from './shellGeometry';
+import type { Palette } from './palette';
 
 /**
  * Placed objects, extruded.
@@ -44,6 +48,7 @@ interface Props {
   clearances: Map<string, ClearanceResult>;
   showLabels: boolean;
   showFigures: boolean;
+  palette: Palette;
   onSelect: (id: string, additive: boolean) => void;
 }
 
@@ -54,6 +59,7 @@ export default function Objects3D({
   clearances,
   showLabels,
   showFigures,
+  palette,
   onSelect,
 }: Props) {
   const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
@@ -67,6 +73,8 @@ export default function Objects3D({
           selected={selected.has(o.id)}
           structure={structure}
           clearance={clearances.get(o.id)}
+          solidSides={solidDividers(o, objects)}
+          palette={palette}
           showLabel={showLabels}
           showFigure={showFigures}
           onSelect={onSelect}
@@ -89,23 +97,26 @@ function FloorFinish({
   object: o,
   spec,
   height,
+  palette,
 }: {
   object: PlacedObject;
   spec: (typeof CATALOG)[keyof typeof CATALOG];
   height: number;
+  palette: Palette;
 }) {
   const green = o.type === 'putting-green';
+  const lounge = o.type === 'lounge';
 
-  // High cocktail tables on the event floor: the frontage is meant to carry
-  // people, and a bare slab reads as empty floor from the plaza.
-  const tables: Array<[number, number]> = [];
+  // Furniture standing on the zone, which is what makes a floor finish legible
+  // at eye level: a bare slab reads as empty floor from the plaza.
+  const spots: Array<[number, number]> = [];
   if (!green) {
-    const step = 2.4;
+    const step = lounge ? 3 : 2.4;
     const cols = Math.max(1, Math.floor((o.w - 1) / step));
     const rows = Math.max(1, Math.floor((o.d - 1) / step));
     for (let i = 0; i < cols; i++) {
       for (let j = 0; j < rows; j++) {
-        tables.push([
+        spots.push([
           -o.w / 2 + (o.w / cols) * (i + 0.5),
           -o.d / 2 + (o.d / rows) * (j + 0.5),
         ]);
@@ -118,16 +129,26 @@ function FloorFinish({
       <mesh position={[0, height / 2, 0]} receiveShadow>
         <boxGeometry args={[o.w, height, o.d]} />
         <meshStandardMaterial
-          color={green ? '#5f9e56' : spec.fill}
+          color={
+            green
+              ? palette.turf
+              : palette.useCatalogColours
+                ? spec.fill
+                : palette.floor
+          }
           roughness={1}
         />
       </mesh>
 
-      {/* A rim, so the zone still reads as an edge from a standing eye. */}
-      <lineSegments position={[0, height + 0.005, 0]}>
-        <edgesGeometry args={[new THREE.BoxGeometry(o.w, 0.001, o.d)]} />
-        <lineBasicMaterial color={spec.stroke} />
-      </lineSegments>
+      {/* A rim, so the zone still reads as an edge from a standing eye. Drawn
+          only in schematic: against brand materials a bright catalog-coloured
+          outline on the floor reads as a stray line, not as a zone edge. */}
+      {palette.useCatalogColours ? (
+        <lineSegments position={[0, height + 0.005, 0]}>
+          <edgesGeometry args={[new THREE.BoxGeometry(o.w, 0.001, o.d)]} />
+          <lineBasicMaterial color={spec.stroke} />
+        </lineSegments>
+      ) : null}
 
       {green ? (
         <group position={[o.w / 2 - 1.1, 0, 0]}>
@@ -137,23 +158,122 @@ function FloorFinish({
           </mesh>
           <mesh position={[0.13, 0.62, 0]}>
             <boxGeometry args={[0.26, 0.16, 0.01]} />
-            <meshStandardMaterial color="#c8a96e" side={THREE.DoubleSide} />
+            <meshStandardMaterial color={palette.brass} side={THREE.DoubleSide} />
           </mesh>
         </group>
       ) : (
-        tables.map(([x, z], i) => (
-          <group key={i} position={[x, 0, z]}>
-            <mesh position={[0, 0.53, 0]}>
-              <cylinderGeometry args={[0.05, 0.05, 1.05, 8]} />
-              <meshStandardMaterial color="#3f3f46" />
-            </mesh>
-            <mesh position={[0, 1.06, 0]}>
-              <cylinderGeometry args={[0.32, 0.32, 0.04, 16]} />
-              <meshStandardMaterial color="#a9762f" roughness={0.7} />
-            </mesh>
-          </group>
-        ))
+        spots.map(([x, z], i) =>
+          lounge ? (
+            // Low seating: an armchair pair and a table top, all well under
+            // sitting-eye height so the glazing behind stays open.
+            <group key={i} position={[x, 0, z]}>
+              {[-0.62, 0.62].map((dx) => (
+                <group key={dx} position={[dx, 0, 0]}>
+                  <mesh position={[0, 0.2, 0]}>
+                    <boxGeometry args={[0.78, 0.4, 0.78]} />
+                    <meshStandardMaterial color={palette.upholstery} roughness={0.95} />
+                  </mesh>
+                  <mesh position={[0, 0.5, -0.3]}>
+                    <boxGeometry args={[0.78, 0.4, 0.18]} />
+                    <meshStandardMaterial color={palette.upholstery} roughness={0.95} />
+                  </mesh>
+                </group>
+              ))}
+              <mesh position={[0, 0.42, 0]}>
+                <cylinderGeometry args={[0.28, 0.28, 0.05, 16]} />
+                <meshStandardMaterial color={palette.timber} roughness={0.7} />
+              </mesh>
+            </group>
+          ) : (
+            <group key={i} position={[x, 0, z]}>
+              <mesh position={[0, 0.53, 0]}>
+                <cylinderGeometry args={[0.05, 0.05, 1.05, 8]} />
+                <meshStandardMaterial color="#3f3f46" />
+              </mesh>
+              <mesh position={[0, 1.06, 0]}>
+                <cylinderGeometry args={[0.32, 0.32, 0.04, 16]} />
+                <meshStandardMaterial color={palette.timber} roughness={0.7} />
+              </mesh>
+            </group>
+          ),
+        )
       )}
+    </>
+  );
+}
+
+/**
+ * An operable partition.
+ *
+ * Drawn as discrete panels with visible joints and a head track rather than as
+ * one slab, because the whole point of the thing is that it stacks away. A
+ * solid box here would read as a permanent wall and quietly turn a flexible
+ * east end into a walled-off one.
+ */
+function MovableWall({
+  object: o,
+  height,
+  spec,
+  palette,
+}: {
+  object: PlacedObject;
+  height: number;
+  spec: (typeof CATALOG)[keyof typeof CATALOG];
+  palette: Palette;
+}) {
+  // Panels run along the wall's long axis, whichever that is.
+  const alongX = o.w >= o.d;
+  const run = alongX ? o.w : o.d;
+  const thickness = alongX ? o.d : o.w;
+  const count = Math.max(1, Math.round(run / 1.05));
+  const panel = run / count;
+  const JOINT = 0.02;
+
+  return (
+    <>
+      {Array.from({ length: count }, (_, i) => {
+        const offset = -run / 2 + panel * (i + 0.5);
+        return (
+          <mesh
+            key={i}
+            position={[
+              alongX ? offset : 0,
+              height / 2,
+              alongX ? 0 : offset,
+            ]}
+          >
+            <boxGeometry
+              args={
+                alongX
+                  ? [panel - JOINT, height, thickness]
+                  : [thickness, height, panel - JOINT]
+              }
+            />
+            <meshStandardMaterial
+              color={palette.useCatalogColours ? spec.fill : palette.bayPanel}
+              roughness={0.75}
+              transparent
+              opacity={0.88}
+            />
+          </mesh>
+        );
+      })}
+
+      {/* Head track: the giveaway that it moves. */}
+      <mesh position={[0, height + 0.05, 0]}>
+        <boxGeometry
+          args={
+            alongX
+              ? [o.w, 0.1, thickness * 1.4]
+              : [thickness * 1.4, 0.1, o.d]
+          }
+        />
+        <meshStandardMaterial
+          color={palette.useCatalogColours ? spec.stroke : palette.brass}
+          roughness={0.5}
+          metalness={0.3}
+        />
+      </mesh>
     </>
   );
 }
@@ -222,6 +342,8 @@ function ObjectMesh({
   selected,
   structure,
   clearance,
+  solidSides: worldSides,
+  palette,
   showLabel,
   showFigure,
   onSelect,
@@ -230,10 +352,18 @@ function ObjectMesh({
   selected: boolean;
   structure: Structure;
   clearance: ClearanceResult | undefined;
+  solidSides: { left: boolean; right: boolean };
+  palette: Palette;
   showLabel: boolean;
   showFigure: boolean;
   onSelect: (id: string, additive: boolean) => void;
 }) {
+  // solidDividers reports world-space faces; a bay turned through 180 degrees
+  // has its local -x on the world right.
+  const flipped = ((o.rotation % 360) + 360) % 360 === 180;
+  const solidSides = flipped
+    ? { left: worldSides.right, right: worldSides.left }
+    : worldSides;
   const spec = CATALOG[o.type];
   const vol = VOLUMES[o.type];
   const bay = isBay(o.type);
@@ -254,7 +384,11 @@ function ObjectMesh({
   const seating = zones.seating;
   const breach = clearance ? !clearance.ok : false;
 
-  const wallColor = breach ? '#c2410c' : darken(spec.stroke, 0.15);
+  const wallColor = breach
+    ? '#c2410c'
+    : palette.useCatalogColours
+      ? darken(spec.stroke, 0.15)
+      : palette.bayPanel;
 
   const handleClick = (e: {
     stopPropagation: () => void;
@@ -286,7 +420,10 @@ function ObjectMesh({
               bay, which is also what makes the step read as a threshold. */}
           <mesh position={[0, platform / 2, zones.enclosureCz]} receiveShadow>
             <boxGeometry args={[o.w, platform, zones.enclosureDepth]} />
-            <meshStandardMaterial color={darken(spec.fill, 0.12)} roughness={0.9} />
+            <meshStandardMaterial
+              color={palette.useCatalogColours ? darken(spec.fill, 0.12) : palette.bayPlatform}
+              roughness={0.9}
+            />
           </mesh>
 
           {/* Turf across the whole enclosure floor, not a small mat: both
@@ -295,22 +432,47 @@ function ObjectMesh({
             <boxGeometry
               args={[o.w - 2 * PANEL, 0.04, zones.enclosureDepth - 0.04]}
             />
-            <meshStandardMaterial color="#5f9e56" roughness={1} />
+            <meshStandardMaterial color={palette.turf} roughness={1} />
           </mesh>
 
-          {/* Screen wall at the back. */}
-          <mesh position={[0, platform + height / 2, o.d / 2 - PANEL / 2]}>
-            <boxGeometry args={[o.w, height, PANEL]} />
+          {/* Screen wall: steel frame and padding, filling the setback so the
+              assembly stands clear of the columns rather than flush with the
+              wall they sit in. Its front face is the screen line. */}
+          <mesh
+            position={[
+              0,
+              platform + height / 2,
+              zones.screenFaceCz + SCREEN_FRAME_M / 2,
+            ]}
+          >
+            <boxGeometry args={[o.w, height, SCREEN_FRAME_M]} />
             <meshStandardMaterial color={wallColor} roughness={0.9} />
           </mesh>
 
-          {/* Impact screen — the one thing that should glow. */}
-          <mesh position={[0, platform + height * 0.46, o.d / 2 - PANEL - 0.04]}>
-            <boxGeometry args={[o.w - 0.5, height * 0.62, 0.04]} />
+          {/* The strip behind the frame, where the column sits. Left as dark
+              recess rather than solid wall: the frame stands off the column,
+              it is not built into it. */}
+          <mesh
+            position={[
+              0,
+              platform + height / 2,
+              zones.screenFaceCz + SCREEN_FRAME_M + COLUMN_PROJECTION_M / 2,
+            ]}
+          >
+            <boxGeometry args={[o.w, height, COLUMN_PROJECTION_M]} />
+            <meshStandardMaterial color={darken(wallColor, 0.4)} roughness={1} />
+          </mesh>
+
+          {/* Impact screen — the one thing that should glow. Sits just in
+              front of the padding, so the whole assembly clears the pillar. */}
+          <mesh
+            position={[0, platform + height * 0.46, zones.screenFaceCz - 0.03]}
+          >
+            <boxGeometry args={[o.w - 0.5, height * 0.62, 0.05]} />
             <meshStandardMaterial
               color="#f4f7f5"
-              emissive="#dfeae4"
-              emissiveIntensity={0.55}
+              emissive={palette.screenEmissive}
+              emissiveIntensity={palette.screenIntensity}
               roughness={0.6}
             />
           </mesh>
@@ -319,39 +481,84 @@ function ObjectMesh({
               at the front. Straight from ref_bays.jpg — and the reason the bay
               run reads as one room rather than a row of sealed boxes, both on
               site and in this model. */}
-          {[-1, 1].map((side) => (
-            <group key={side} position={[side * (o.w / 2 - PANEL / 2), 0, 0]}>
-              <mesh
-                position={[
-                  0,
-                  platform + height / 2,
-                  o.d / 2 - zones.enclosureDepth * REAR_FRACTION * 0.5,
-                ]}
-              >
-                <boxGeometry
-                  args={[PANEL, height, zones.enclosureDepth * REAR_FRACTION]}
-                />
-                <meshStandardMaterial color={wallColor} roughness={0.9} />
-              </mesh>
-              <mesh
-                position={[
-                  0,
-                  platform + DIVIDER_FRONT_H / 2,
-                  zones.enclosureCz -
-                    zones.enclosureDepth * (1 - REAR_FRACTION) * 0.5,
-                ]}
-              >
-                <boxGeometry
-                  args={[
-                    PANEL,
-                    DIVIDER_FRONT_H,
-                    zones.enclosureDepth * (1 - REAR_FRACTION),
+          {([-1, 1] as const).map((side) => {
+            // Local -x is the bay's left face in plan; see solidDividers.
+            const solid = side === -1 ? solidSides.left : solidSides.right;
+            return (
+              <group key={side} position={[side * (o.w / 2 - PANEL / 2), 0, 0]}>
+                <mesh
+                  position={[
+                    0,
+                    platform + height / 2,
+                    solid
+                      ? zones.enclosureCz
+                      : o.d / 2 - zones.enclosureDepth * REAR_FRACTION * 0.5,
                   ]}
+                >
+                  <boxGeometry
+                    args={[
+                      PANEL,
+                      height,
+                      solid
+                        ? zones.enclosureDepth
+                        : zones.enclosureDepth * REAR_FRACTION,
+                    ]}
+                  />
+                  <meshStandardMaterial color={wallColor} roughness={0.9} />
+                </mesh>
+                {solid ? null : (
+                  <mesh
+                    position={[
+                      0,
+                      platform + DIVIDER_FRONT_H / 2,
+                      zones.enclosureCz -
+                        zones.enclosureDepth * (1 - REAR_FRACTION) * 0.5,
+                    ]}
+                  >
+                    <boxGeometry
+                      args={[
+                        PANEL,
+                        DIVIDER_FRONT_H,
+                        zones.enclosureDepth * (1 - REAR_FRACTION),
+                      ]}
+                    />
+                    <meshStandardMaterial color={wallColor} roughness={0.9} />
+                  </mesh>
+                )}
+              </group>
+            );
+          })}
+
+          {/* Warm linear cove under the header and a pooled light below it.
+              The concept's bay separators are LED strips, and without an
+              actual emitter the "warm pooled light" it asks for is just a
+              darker room. */}
+          {palette.coveIntensity > 0 ? (
+            <>
+              <mesh
+                position={[
+                  0,
+                  platform + height - HEADER_H,
+                  -o.d / 2 + seating + PANEL,
+                ]}
+              >
+                <boxGeometry args={[o.w - 2 * PANEL, 0.06, 0.06]} />
+                <meshStandardMaterial
+                  color={palette.cove}
+                  emissive={palette.cove}
+                  emissiveIntensity={palette.coveIntensity}
+                  toneMapped={false}
                 />
-                <meshStandardMaterial color={wallColor} roughness={0.9} />
               </mesh>
-            </group>
-          ))}
+              <pointLight
+                position={[0, platform + height - 0.6, zones.playCz + 0.4]}
+                color={palette.cove}
+                intensity={9}
+                distance={7}
+                decay={2}
+              />
+            </>
+          ) : null}
 
           {/* Header over the opening: the lit frame in the reference render,
               and in practice where the projector and cove lighting hide. */}
@@ -368,10 +575,38 @@ function ObjectMesh({
 
           {/* High table row at the front, turned back into the room. */}
           {seating > 0.4 ? (
-            <mesh position={[0, BENCH_H / 2, -o.d / 2 + seating / 2]}>
-              <boxGeometry args={[o.w * 0.78, BENCH_H, Math.min(seating * 0.6, 0.6)]} />
-              <meshStandardMaterial color={darken(spec.stroke, 0.35)} roughness={0.8} />
-            </mesh>
+            <group position={[0, 0, -o.d / 2 + seating / 2]}>
+              {/* Seat. */}
+              <mesh position={[0, BENCH_H / 2, 0]}>
+                <boxGeometry args={[o.w * 0.78, BENCH_H, 0.55]} />
+                <meshStandardMaterial
+                  color={
+                    palette.useCatalogColours
+                      ? darken(spec.stroke, 0.35)
+                      : palette.upholstery
+                  }
+                  roughness={0.85}
+                />
+              </mesh>
+              {/* Back, turned into the room, per every Chidlom bay. */}
+              <mesh position={[0, BENCH_H + 0.22, -0.22]}>
+                <boxGeometry args={[o.w * 0.78, 0.44, 0.12]} />
+                <meshStandardMaterial
+                  color={
+                    palette.useCatalogColours
+                      ? darken(spec.stroke, 0.45)
+                      : palette.upholstery
+                  }
+                  roughness={0.85}
+                />
+              </mesh>
+              {/* Timber armrest table along the back — the detail that makes a
+                  LENGOLF bay social rather than a practice booth. */}
+              <mesh position={[0, BENCH_H + 0.46, -0.22]}>
+                <boxGeometry args={[o.w * 0.82, 0.05, 0.3]} />
+                <meshStandardMaterial color={palette.timber} roughness={0.7} />
+              </mesh>
+            </group>
           ) : null}
 
           {/* Scale figure at the tee: the fastest way to read clear height. */}
@@ -387,15 +622,23 @@ function ObjectMesh({
             </mesh>
           ) : null}
         </>
+      ) : o.type === 'movable-wall' ? (
+        <MovableWall object={o} height={height} spec={spec} palette={palette} />
       ) : o.type === 'cart-pillar' ? (
         <CartFeature object={o} />
       ) : vol.mass === 'floor-finish' ? (
-        <FloorFinish object={o} spec={spec} height={height} />
+        <FloorFinish object={o} spec={spec} height={height} palette={palette} />
       ) : (
         <mesh position={[0, height / 2, 0]} receiveShadow castShadow>
           <boxGeometry args={[o.w, height, o.d]} />
           <meshStandardMaterial
-            color={spec.fill}
+            color={
+              palette.useCatalogColours
+                ? spec.fill
+                : o.type === 'bar'
+                  ? palette.barCounter
+                  : palette.blockwork
+            }
             roughness={0.85}
             transparent={vol.mass === 'room'}
             opacity={vol.mass === 'room' ? 0.82 : 1}

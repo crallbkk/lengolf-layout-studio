@@ -56,6 +56,8 @@ export default function View3D() {
   const showBeams = useViewStore((s) => s.showBeams);
   const showFigures = useViewStore((s) => s.showFigures);
   const showLabels = useViewStore((s) => s.showLabels);
+  const paletteMode = useViewStore((s) => s.palette);
+  const setPalette = useViewStore((s) => s.setPalette);
   const toggle = useViewStore((s) => s.toggle);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -126,6 +128,7 @@ export default function View3D() {
         showBeams={showBeams}
         showFigures={showFigures}
         showLabels={showLabels}
+        paletteMode={paletteMode}
         view={view}
         viewNonce={viewNonce}
         onSelect={handleSelect}
@@ -164,6 +167,26 @@ export default function View3D() {
               {p.label}
             </button>
           ))}
+        </div>
+        <div className="pointer-events-auto ml-2 flex items-center gap-1.5">
+          <button
+            type="button"
+            className={paletteMode === 'schematic' ? CHIP_ON : CHIP}
+            onClick={() => setPalette('schematic')}
+            aria-pressed={paletteMode === 'schematic'}
+            title="Study colours, flat light"
+          >
+            Schematic
+          </button>
+          <button
+            type="button"
+            className={paletteMode === 'finished' ? CHIP_ON : CHIP}
+            onClick={() => setPalette('finished')}
+            aria-pressed={paletteMode === 'finished'}
+            title="LENGOLF materials, warm low light"
+          >
+            Materials
+          </button>
         </div>
         <button type="button" className={`${CHIP} pointer-events-auto ml-2`} onClick={savePng}>
           Save PNG

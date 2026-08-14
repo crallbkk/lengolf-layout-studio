@@ -17,6 +17,7 @@ import Objects3D from './Objects3D';
 import Shell3D from './Shell3D';
 import WalkControls from './WalkControls';
 import type { CameraView } from './cameraViews';
+import { PALETTES, type PaletteMode } from './palette';
 import type { CameraMode } from '@/store/useViewStore';
 
 /**
@@ -61,6 +62,7 @@ export interface Scene3DProps {
   showBeams: boolean;
   showFigures: boolean;
   showLabels: boolean;
+  paletteMode: PaletteMode;
   view: CameraView;
   viewNonce: number;
   onSelect: (id: string, additive: boolean) => void;
@@ -77,12 +79,15 @@ export default function Scene3D({
   showBeams,
   showFigures,
   showLabels,
+  paletteMode,
   view,
   viewNonce,
   onSelect,
   onBackgroundClick,
   onClearances,
 }: Scene3DProps) {
+  const palette = PALETTES[paletteMode];
+
   const clearances = useMemo(
     () => swingClearances(objects, structure),
     [objects, structure],
@@ -109,8 +114,8 @@ export default function Scene3D({
       // of the layout as drawn rather than one the image model invented.
       gl={{ antialias: true, preserveDrawingBuffer: true }}
     >
-      <color attach="background" args={['#dee5e8']} />
-      <fog attach="fog" args={['#dee5e8', 60, 160]} />
+      <color attach="background" args={[palette.background]} />
+      <fog attach="fog" args={[palette.background, 60, 160]} />
 
       {/* The outlook is a photograph, so it must not block the first frame if
           it is slow or missing. */}
@@ -118,17 +123,21 @@ export default function Scene3D({
         <Context3D />
       </Suspense>
 
-      {/* Flat, even light. A study model should not have mood lighting: shadow
-          reads as design intent and there is none here to communicate. */}
-      <hemisphereLight args={['#ffffff', '#8d8b85', 1.15]} />
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[18, 26, -12]} intensity={0.75} />
-      <directionalLight position={[-14, 18, 22]} intensity={0.35} />
+      {/* Schematic light is flat and even on purpose: a study model should not
+          have mood lighting, because shadow reads as design intent and there is
+          none here to communicate. The finished palette turns it down to the
+          low, warm, pooled light the concept actually calls for, and lets the
+          bay screens and coves do the work. */}
+      <hemisphereLight args={['#ffffff', '#8d8b85', palette.hemi]} />
+      <ambientLight intensity={palette.ambient} />
+      <directionalLight position={[18, 26, -12]} intensity={palette.key} />
+      <directionalLight position={[-14, 18, 22]} intensity={palette.fill} />
 
       <Shell3D
         structure={structure}
         showCeiling={showCeiling}
         showBeams={showBeams}
+        palette={palette}
       />
       <Objects3D
         objects={objects}
@@ -137,6 +146,7 @@ export default function Scene3D({
         clearances={byId}
         showLabels={showLabels}
         showFigures={showFigures}
+        palette={palette}
         onSelect={onSelect}
       />
 

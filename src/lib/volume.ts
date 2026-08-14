@@ -1,4 +1,9 @@
-import { COLUMN_GRID_X_M, COLUMN_GRID_Y_M, SHELL_OUTLINE } from './floorplan';
+import {
+  COLUMNS,
+  COLUMN_GRID_X_M,
+  COLUMN_GRID_Y_M,
+  SHELL_OUTLINE,
+} from './floorplan';
 import { corners, rotate } from './geometry';
 import { isBay } from './catalog';
 import type { ObjectKind, PlacedObject, Vec2 } from './types';
@@ -145,7 +150,13 @@ export const VOLUMES: Record<ObjectKind, VolumeSpec> = {
   'putting-green': { heightM: 0.04, mass: 'floor-finish' },
   'event-floor': { heightM: 0.02, mass: 'floor-finish' },
   bar: { heightM: 1.1, mass: 'furniture' },
-  lounge: { heightM: 0.78, mass: 'furniture' },
+  /**
+   * A lounge is a zone, not an object. Extruding it as a 0.78 m block turned a
+   * seating area into a plinth the size of a shipping container — from inside
+   * it read as a solid mass in front of the glazing, which is the opposite of
+   * what it is. It is a change of flooring with furniture standing on it.
+   */
+  lounge: { heightM: 0.02, mass: 'floor-finish' },
   lockers: { heightM: 2.0, mass: 'room' },
   pantry: { heightM: 2.4, mass: 'room' },
   'service-band': { heightM: 2.4, mass: 'room' },
@@ -153,8 +164,47 @@ export const VOLUMES: Record<ObjectKind, VolumeSpec> = {
   // Roof height of a golf cart. The piece reads at eye level, which is the
   // whole point of putting it where people walk in.
   'cart-pillar': { heightM: 1.85, mass: 'furniture' },
+  // Operable partitions run to the soffit or they do not divide anything —
+  // acoustically a partition with a gap over it is a screen, not a wall.
+  'movable-wall': { heightM: 3.0, mass: 'room' },
   generic: { heightM: 1.0, mass: 'furniture' },
 };
+
+/**
+ * Which of a bay's two dividers must be built solid, full height.
+ *
+ * A bay divider normally steps down at the front so the run reads as one room.
+ * Where a divider lands on the line of a movable wall, though, it stops being a
+ * divider and becomes the end of a partition: the acoustic line has to be
+ * continuous or closing the wall divides nothing. So the last bay against the
+ * VIP partition closes solid, and it does so because the partition is there
+ * rather than because someone remembered to tick a box.
+ *
+ * Axis-aligned only, which is every case in this plan; a rotated bay simply
+ * gets the normal treatment.
+ */
+export function solidDividers(
+  o: PlacedObject,
+  objects: PlacedObject[],
+): { left: boolean; right: boolean } {
+  const out = { left: false, right: false };
+  if (!isBay(o.type) || o.rotation % 180 !== 0) return out;
+
+  const TOL = 0.08;
+  const left = o.cx - o.w / 2;
+  const right = o.cx + o.w / 2;
+
+  for (const other of objects) {
+    if (other.type !== 'movable-wall') continue;
+    const a = other.cx - other.w / 2;
+    const b = other.cx + other.w / 2;
+    for (const face of [a, b]) {
+      if (Math.abs(face - left) < TOL) out.left = true;
+      if (Math.abs(face - right) < TOL) out.right = true;
+    }
+  }
+  return out;
+}
 
 /* ------------------------------------------------------------------ */
 /* Clearance                                                           */
@@ -187,6 +237,29 @@ export interface ClearanceResult {
 export const SCREEN_BUFFER_M = 1.25;
 
 /**
+ * How far the columns on the south wall line stick into the room.
+ *
+ * They are centred ON the wall line, so exactly half of each one is inside.
+ * Derived rather than typed out, so it follows the traced drawing.
+ */
+export const COLUMN_PROJECTION_M =
+  Math.max(...COLUMNS.map((c) => c.size)) / 2;
+
+/** Steel frame and padding around the impact screen. */
+export const SCREEN_FRAME_M = 0.15;
+
+/**
+ * How far the screen assembly stands forward of the bay's rear edge.
+ *
+ * The screen cannot be flush with the wall, and it cannot be flush with the
+ * column face either: the frame and padding have to sit in FRONT of the
+ * column, so the setback is the column projection plus the frame. Modelling it
+ * matters because it is depth the bay loses — half a metre off the play band,
+ * every bay, before anyone has drawn anything.
+ */
+export const SCREEN_SETBACK_M = COLUMN_PROJECTION_M + SCREEN_FRAME_M;
+
+/**
  * Lateral width of a swing. A player plus the arc of a driver, not the width of
  * the room they are standing in.
  */
@@ -195,12 +268,14 @@ export const SWING_ZONE_W_M = 2.0;
 export interface BayZones {
   /** Table / bench row at the front, from the plan. */
   seating: number;
-  /** Screen wall back to the front of the platform. */
+  /** Rear edge to the front of the platform. */
   enclosureDepth: number;
   screenBuffer: number;
   playDepth: number;
   /** Local z of the enclosure centre, in the bay's own frame. */
   enclosureCz: number;
+  /** Local z of the screen face — forward of the rear edge, clear of columns. */
+  screenFaceCz: number;
   /** Local z of the play band centre — where the tee goes. */
   playCz: number;
 }
@@ -208,16 +283,20 @@ export interface BayZones {
 export function bayZones(o: PlacedObject): BayZones {
   const seating = Math.min(Math.max(o.seatingDepth ?? 0, 0), o.d);
   const enclosureDepth = o.d - seating;
+  // Depth actually available in front of the screen, after the columns.
+  const usable = Math.max(0, enclosureDepth - SCREEN_SETBACK_M);
   // A shallow bay gives up buffer before it gives up play; without the cap a
   // hand-shrunk bay would end up with negative play depth.
-  const screenBuffer = Math.min(SCREEN_BUFFER_M, enclosureDepth * 0.4);
+  const screenBuffer = Math.min(SCREEN_BUFFER_M, usable * 0.4);
+  const screenFaceCz = o.d / 2 - SCREEN_SETBACK_M;
   return {
     seating,
     enclosureDepth,
     screenBuffer,
-    playDepth: Math.max(0, enclosureDepth - screenBuffer),
+    playDepth: Math.max(0, usable - screenBuffer),
     enclosureCz: seating / 2,
-    playCz: o.d / 2 - screenBuffer - (enclosureDepth - screenBuffer) / 2,
+    screenFaceCz,
+    playCz: screenFaceCz - screenBuffer - (usable - screenBuffer) / 2,
   };
 }
 

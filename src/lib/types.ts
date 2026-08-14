@@ -20,6 +20,7 @@ export type ObjectKind =
   | 'service-band'
   | 'store'
   | 'cart-pillar'
+  | 'movable-wall'
   | 'generic';
 
 export interface PlacedObject {

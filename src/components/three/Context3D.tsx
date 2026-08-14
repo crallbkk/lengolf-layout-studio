@@ -31,7 +31,17 @@ const BACKDROP_Z = -21;
  * attempt put it eight metres down — hides the trees and the street below the
  * floor and leaves the bottom half of every window showing bare deck.
  */
-const BACKDROP_BASE = -1.2;
+const BACKDROP_BASE = -5.5;
+
+/**
+ * Unit 1225 is on the L2 podium, so the landscaped plaza in the photograph is a
+ * storey DOWN, not level with the floor. The first version put a 21 m deck at
+ * floor level right outside the glass, which is what produced a grey band
+ * across the bottom of every window: a slab at eye-ish level occludes
+ * everything beyond it. What is actually out there is a narrow terrace, a
+ * parapet, and then a drop.
+ */
+const PLAZA_DROP = -5.5;
 
 export default function Context3D() {
   /**
@@ -55,12 +65,30 @@ export default function Context3D() {
         <meshBasicMaterial map={texture} toneMapped={false} />
       </mesh>
 
-      {/* Podium deck outside the glazing, so the unit does not read as
-          floating in a void when the camera swings round to the north. It only
-          needs to bridge the strip between the glass and the billboard. */}
-      <mesh position={[B.cx, -0.06, BACKDROP_Z / 2]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[120, Math.abs(BACKDROP_Z)]} />
-        <meshStandardMaterial color="#b9b8b0" roughness={1} />
+      {/* No terrace slab at floor level either.
+   *
+   * 1225 is on the L2 podium, so there is no ground immediately outside the
+   * glass to stand on — you look DOWN onto the plaza. A slab at floor level
+   * filled the bottom half of every window with flat grey, which is exactly
+   * what it would do: a horizontal plane at eye-adjacent height, seen almost
+   * edge on, occludes everything past it. */}
+
+      {/* No parapet. The site photographs do show one — the pale pink planter
+          band — but a metre of solid wall two metres outside the glass crops
+          the plaza out of the view from any standing eye inside, and the view
+          is the reason the backdrop exists. Losing accuracy at the sill to keep
+          the outlook is the right trade for a study model. */}
+
+      {/* The plaza, a storey down.
+   *
+   * Green, not grey. A flat neutral plane here is what people kept reading as
+   * "a grey area outside the window": below the horizon the billboard runs out
+   * and this plane takes over, so whatever colour it is IS the view. The plaza
+   * in the photograph is landscaped and tree-covered, so the ground under the
+   * billboard has to carry on looking like that. */}
+      <mesh position={[B.cx, PLAZA_DROP, -60]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[220, 130]} />
+        <meshStandardMaterial color="#7f9268" roughness={1} />
       </mesh>
     </group>
   );

@@ -177,6 +177,21 @@ export const CATALOG: Record<ObjectKind, TypeSpec> = {
     capacity: 0,
     requiresClearance: false,
   },
+  'movable-wall': {
+    kind: 'movable-wall',
+    label: 'Movable wall',
+    fill: '#e9e4f2',
+    stroke: '#5b4b8a',
+    text: '#2f2650',
+    // Thin by nature: an operable partition is a track and a stack of panels,
+    // and its whole value is that its LENGTH is the design decision.
+    minW: 0.1,
+    minD: 1,
+    defaultW: 0.15,
+    defaultD: 3.66,
+    capacity: 0,
+    requiresClearance: false,
+  },
   generic: {
     kind: 'generic',
     label: 'Rectangle',
@@ -205,6 +220,7 @@ export const CATALOG_ORDER: ObjectKind[] = [
   'service-band',
   'store',
   'cart-pillar',
+  'movable-wall',
   'generic',
 ];
 
