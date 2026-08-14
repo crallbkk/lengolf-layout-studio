@@ -28,12 +28,13 @@ import type { LayoutSnapshot, ObjectKind, Settings } from './types';
  *     seatingDepth all encode as 0 and are then dropped if they trail.
  *   - settings and typeOverrides are omitted entirely when they are the
  *     defaults, which is the overwhelmingly common case.
- *   - coordinates round to a millimetre. The grid snaps at 100 mm and the
- *     drawing is traced from photographs; float noise past that is not
- *     information.
+ *   - coordinates round to a tenth of a millimetre, which trims float noise
+ *     without moving anything (see `round` below for why not whole mm).
  *
- * Measured on the seed layout: 2,584 B of JSON to 669 B, and 1,658 to 577 URL
- * characters — 66% shorter, with no server and no expiry.
+ * Measured on the seed layout: the encoded payload goes from 1,637 to 558
+ * characters — 66% shorter — with no server, no upload and no expiry. The
+ * pinned figure is the payload, not a full URL, since the URL also carries
+ * whatever the origin and share token happen to be.
  */
 
 /**
@@ -71,6 +72,15 @@ const KIND_INDEX = new Map<ObjectKind, number>(
 
 /** Bit positions in an object's flags field. */
 const F_LOCKED = 1;
+/**
+ * "This object has a seatingDepth", carried separately from the value because
+ * `0` and absent are different states and the value alone cannot tell them
+ * apart. The inspector shows or hides its seating-depth control on
+ * `seatingDepth !== undefined`, so collapsing the two would take the control
+ * away from a bay whose strip had been set to zero, with no way back short of
+ * changing the object's type.
+ */
+const F_HAS_SEATING = 2;
 
 /** Bit positions in the settings flags field. */
 const S_SNAP = 1;
@@ -79,10 +89,14 @@ const S_GRID = 4;
 const S_CLEARANCE = 8;
 
 /**
- * A ceiling on how many tuples a payload may claim, applied before the array is
- * walked. `parseSnapshot` caps the resulting objects at 500 anyway, but it does
- * so after this code has already mapped the whole array — and a compressed
- * payload expands enough that a short URL can describe a very long one.
+ * A ceiling on how many tuples are expanded into objects.
+ *
+ * It bounds the walk, not the parse: JSON.parse has already materialised the
+ * array by the time this applies, and a compressed payload expands enough that
+ * a 26 KB URL can describe 300,000 tuples. That parse is tens of milliseconds
+ * and allocates once, which is survivable; building 300,000 objects and handing
+ * them to an O(n²) warning pass that runs every frame is not, which is what this
+ * actually prevents. `parseSnapshot` independently caps objects at 500.
  */
 const MAX_TUPLES = 600;
 
@@ -138,18 +152,25 @@ function encodeSettings(s: Settings): number[] | null {
 
 export function encodeShare(snap: LayoutSnapshot): string {
   const o: Tuple[] = snap.objects.map((obj) => {
-    const kind = KIND_INDEX.get(obj.type);
+    // Both the index and the label default resolve through the SAME fallback.
+    // Guarding one and then dereferencing CATALOG[obj.type] for the other made
+    // the guard dead code that read like live defence, and turned an object of
+    // an unknown type from a mislabelled rectangle into a "Share link" that
+    // throws. `parseSnapshot` should make this unreachable; if it ever is not,
+    // failing soft is the right failure.
+    const kind = KIND_INDEX.has(obj.type) ? obj.type : 'generic';
     const t: Tuple = [
-      kind ?? KIND_INDEX.get('generic')!,
+      KIND_INDEX.get(kind)!,
       round(obj.cx),
       round(obj.cy),
       round(obj.w),
       round(obj.d),
       round(obj.rotation),
-      obj.locked ? F_LOCKED : 0,
-      obj.label === CATALOG[obj.type].label ? 0 : obj.label,
+      (obj.locked ? F_LOCKED : 0) |
+        (obj.seatingDepth !== undefined ? F_HAS_SEATING : 0),
+      obj.label === CATALOG[kind].label ? 0 : obj.label,
       obj.notes || 0,
-      obj.seatingDepth ? round(obj.seatingDepth) : 0,
+      obj.seatingDepth !== undefined ? round(obj.seatingDepth) : 0,
     ];
     // Only TRAILING zeros may go: dropping an interior one would shift every
     // field after it by a position.
@@ -242,7 +263,12 @@ export function decodeShare(param: string): unknown | null {
       rotation,
       locked: (Number(flags) & F_LOCKED) !== 0,
       notes: typeof notes === 'string' ? notes : '',
-      ...(isNum(seatingDepth) && seatingDepth > 0 ? { seatingDepth } : {}),
+      // The flag decides presence, the field only supplies the value — so a
+      // seatingDepth of 0 still round-trips even though the trailing-zero trim
+      // has removed the field itself.
+      ...((Number(flags) & F_HAS_SEATING) !== 0
+        ? { seatingDepth: isNum(seatingDepth) ? seatingDepth : 0 }
+        : {}),
     });
   }
 

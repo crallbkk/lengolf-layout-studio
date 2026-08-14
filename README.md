@@ -45,7 +45,7 @@ Set these in Vercel → Project → Settings → Environment Variables:
 | --- | --- | --- |
 | `APP_PASSWORD` | yes | The shared password. |
 | `APP_USER` | no | Username, defaults to `lengolf`. |
-| `NEXT_PUBLIC_SHARE_TOKEN` | no | Enables password-free share links. Unset means every link still needs the password. |
+| `NEXT_PUBLIC_SHARE_TOKEN` | no | Enables password-free share links. Generate with `openssl rand -hex 32`; anything under 24 characters is ignored and no link will bypass the gate. Unset means every link still needs the password. |
 
 Two behaviours worth knowing:
 
@@ -104,7 +104,9 @@ authorisation token above has to ride in the query instead.
 reconstruct rather than compressing harder — ids (regenerated on arrival), objects as
 positional tuples instead of keyed JSON, labels equal to the catalog default, empty
 notes, and settings and type overrides that match the defaults. Measured on the seed
-layout: **1,658 → 637 characters**, 66% smaller.
+layout, the encoded payload goes from **1,637 to 558 characters** — 66% smaller. A
+whole link is that plus the origin and the share token, around 640 characters on the
+Vercel domain.
 
 Two rules for changing it:
 

@@ -56,6 +56,21 @@ const SHARE_COOKIE = 'lengolf_share';
 /** Long enough to outlast a review cycle, short enough that access lapses. */
 const SHARE_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
+/**
+ * Anything shorter is not a secret, and the whole feature rests on this value
+ * being unguessable against an edge function nobody rate-limits. A token set to
+ * `demo` or `share` must not open the gate — treating it as absent fails closed,
+ * which is the safe direction for a misconfiguration. Generate one with
+ * `openssl rand -hex 32`.
+ */
+const MIN_SHARE_TOKEN_LENGTH = 24;
+
+function shareTokenFromEnv(): string | null {
+  const token = process.env.NEXT_PUBLIC_SHARE_TOKEN;
+  if (!token || token.length < MIN_SHARE_TOKEN_LENGTH) return null;
+  return token;
+}
+
 function unauthorized(): NextResponse {
   return new NextResponse('Authentication required.', {
     status: 401,
@@ -93,22 +108,37 @@ function decodeBase64(value: string): string | null {
   }
 }
 
-/** Adds the no-index header every authorised response carries. */
-function allow(request: NextRequest, grantShareCookie: boolean): NextResponse {
+/**
+ * Adds the no-index header every authorised response carries, and — only on the
+ * request that presented a token — swaps that token for a cookie.
+ *
+ * The token is passed in rather than re-read from the environment: it has
+ * already been validated by the caller, and a second read of a security-relevant
+ * value is a second thing a reader has to check agrees with the first.
+ */
+function allow(request: NextRequest, grantToken: string | null): NextResponse {
   const response = NextResponse.next();
   response.headers.set('X-Robots-Tag', 'noindex, nofollow');
-  if (grantShareCookie) {
-    const token = process.env.NEXT_PUBLIC_SHARE_TOKEN;
-    if (token) {
-      response.cookies.set(SHARE_COOKIE, token, {
-        httpOnly: true,
-        // Not readable by page scripts, and never sent to another origin.
-        sameSite: 'lax',
-        secure: request.nextUrl.protocol === 'https:',
-        path: '/',
-        maxAge: SHARE_COOKIE_MAX_AGE,
-      });
-    }
+  if (grantToken) {
+    response.cookies.set(SHARE_COOKIE, grantToken, {
+      // Not readable by page scripts, and never sent to another origin.
+      httpOnly: true,
+      // `lax`, not `strict`: the link is followed as a top-level navigation
+      // from a chat client, and `strict` would withhold the cookie on exactly
+      // that first hop.
+      sameSite: 'lax',
+      // NODE_ENV as well as the protocol, so a bearer token is never issued
+      // without Secure in production just because something upstream terminated
+      // TLS and forwarded plaintext. Local http dev still works.
+      secure:
+        process.env.NODE_ENV === 'production' ||
+        request.nextUrl.protocol === 'https:',
+      path: '/',
+      maxAge: SHARE_COOKIE_MAX_AGE,
+    });
+    // This is the one response carrying a credential. Nothing may store it —
+    // cheaper than reasoning about what any cache in front of this keys on.
+    response.headers.set('Cache-Control', 'private, no-store');
   }
   return response;
 }
@@ -116,7 +146,7 @@ function allow(request: NextRequest, grantShareCookie: boolean): NextResponse {
 export function proxy(request: NextRequest): NextResponse {
   const password = process.env.APP_PASSWORD;
   const user = process.env.APP_USER || DEFAULT_USER;
-  const shareToken = process.env.NEXT_PUBLIC_SHARE_TOKEN;
+  const shareToken = shareTokenFromEnv();
 
   if (!password) {
     // Local development stays open so `npm run dev` needs no setup. In
@@ -150,11 +180,11 @@ export function proxy(request: NextRequest): NextResponse {
   if (shareToken) {
     const supplied = request.nextUrl.searchParams.get('k');
     if (supplied !== null && constantTimeEqual(supplied, shareToken)) {
-      return allow(request, true);
+      return allow(request, shareToken);
     }
     const cookie = request.cookies.get(SHARE_COOKIE)?.value;
     if (cookie !== undefined && constantTimeEqual(cookie, shareToken)) {
-      return allow(request, false);
+      return allow(request, null);
     }
   }
 
@@ -173,7 +203,7 @@ export function proxy(request: NextRequest): NextResponse {
   const passOk = constantTimeEqual(decoded.slice(separator + 1), password);
   if (!userOk || !passOk) return unauthorized();
 
-  return allow(request, false);
+  return allow(request, null);
 }
 
 export const config = {

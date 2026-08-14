@@ -248,10 +248,13 @@ function parseSnapshot(raw: unknown): LayoutSnapshot | null {
     objects,
     typeOverrides: overrides,
     settings,
-    seedVersion:
-      typeof r.seedVersion === 'number' && Number.isFinite(r.seedVersion)
-        ? r.seedVersion
-        : 0,
+    /**
+     * Clamped like every other number here. Unbounded, a link carrying
+     * `seedVersion: 1e308` pins the browser above SEED_VERSION forever, so it
+     * silently never again notices a published layout — the one failure in this
+     * parser that persists and has no visible cause.
+     */
+    seedVersion: Math.round(clamp(r.seedVersion, 0, 0, 1_000_000)),
   };
 }
 
@@ -640,10 +643,26 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
        */
       if (fromHash) {
         try {
+          /**
+           * The share token goes with it.
+           *
+           * Leaving `?k=` behind leaves the URL bar holding a link that opens
+           * the gate but no longer carries a layout — and copying the address
+           * bar is how people re-share. That produced a link which
+           * authenticated successfully and then showed the recipient whatever
+           * was in their OWN localStorage: a wrong answer with no error. A
+           * stripped URL fails visibly instead, and the Share button is the
+           * supported way to pass a layout on.
+           *
+           * It also keeps a credential out of the address bar, the browser
+           * history, and anything the user pastes by hand.
+           */
+          const url = new URL(window.location.href);
+          url.searchParams.delete('k');
           window.history.replaceState(
             null,
             '',
-            window.location.pathname + window.location.search,
+            url.pathname + url.search,
           );
         } catch {
           /* replaceState can throw in exotic embeddings; the layout is already

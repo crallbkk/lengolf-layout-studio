@@ -161,6 +161,51 @@ describe('round trip', () => {
     expect(back.seedVersion).toBe(SEED_VERSION);
   });
 
+  it('distinguishes a zero seating depth from an absent one', () => {
+    // The inspector shows its seating-depth control on `!== undefined`, so
+    // collapsing 0 into absent would take the control away from a bay whose
+    // strip had been set to zero.
+    const base: PlacedObject = {
+      id: 'x',
+      type: 'social-bay',
+      label: 'S1',
+      cx: 0,
+      cy: 0,
+      w: 4,
+      d: 6,
+      rotation: 0,
+      locked: false,
+      notes: '',
+    };
+    const [absent] = objectsOf(decodeShare(encodeShare(snap({ objects: [base] }))));
+    expect(absent.seatingDepth).toBeUndefined();
+
+    const [zero] = objectsOf(
+      decodeShare(encodeShare(snap({ objects: [{ ...base, seatingDepth: 0 }] }))),
+    );
+    expect(zero.seatingDepth).toBe(0);
+  });
+
+  it('encodes an unknown type as generic instead of throwing', () => {
+    // parseSnapshot should make this unreachable; if it ever is not, a
+    // mislabelled rectangle beats a Share button that throws.
+    const rogue = {
+      id: 'x',
+      type: 'not-a-real-kind',
+      label: 'Mystery',
+      cx: 1,
+      cy: 1,
+      w: 2,
+      d: 2,
+      rotation: 0,
+      locked: false,
+      notes: '',
+    } as unknown as PlacedObject;
+    expect(() => encodeShare(snap({ objects: [rogue] }))).not.toThrow();
+    const [b] = objectsOf(decodeShare(encodeShare(snap({ objects: [rogue] }))));
+    expect(b.type).toBe('generic');
+  });
+
   it('survives an empty layout', () => {
     const back = decodeShare(encodeShare(snap({ objects: [] })));
     expect(objectsOf(back)).toEqual([]);

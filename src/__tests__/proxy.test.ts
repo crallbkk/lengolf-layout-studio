@@ -11,7 +11,8 @@ import { proxy } from '../proxy';
  */
 
 const PASSWORD = 'correct horse battery staple';
-const TOKEN = 'sharetoken-0123456789abcdef';
+/** Must clear MIN_SHARE_TOKEN_LENGTH, or the proxy correctly ignores it. */
+const TOKEN = 'sharetoken-0123456789abcdef-0123456789';
 const SHARE_COOKIE = 'lengolf_share';
 
 const basic = (user: string, pass: string) =>
@@ -125,10 +126,41 @@ describe('share links', () => {
   });
 
   it('still requires the password for everyone without a link', () => {
-    delete process.env.NEXT_PUBLIC_SHARE_TOKEN;
-    process.env.NEXT_PUBLIC_SHARE_TOKEN = TOKEN;
     expect(proxy(req('https://x.test/')).status).toBe(401);
     expect(proxy(req('https://x.test/_next/static/chunks/main.js')).status).toBe(401);
+  });
+
+  it('ignores a token too short to be a secret', () => {
+    // A token of `demo` against an unthrottled edge function is not a secret.
+    // Treating it as absent fails closed rather than opening the gate to a
+    // guess, which is the safe direction for a misconfiguration.
+    for (const weak of ['demo', 'share', 'lengolf', 'a'.repeat(23)]) {
+      process.env.NEXT_PUBLIC_SHARE_TOKEN = weak;
+      expect(proxy(req(`https://x.test/?k=${weak}`)).status).toBe(401);
+    }
+    process.env.NEXT_PUBLIC_SHARE_TOKEN = 'a'.repeat(24);
+    expect(isAllowed(proxy(req(`https://x.test/?k=${'a'.repeat(24)}`)))).toBe(true);
+  });
+
+  it('forbids caching the one response that carries the credential', () => {
+    const granted = proxy(req(`https://x.test/?k=${TOKEN}`));
+    expect(granted.headers.get('Cache-Control')).toBe('private, no-store');
+    // Cookie-authorised asset responses carry no credential, so they keep the
+    // origin's own caching.
+    const asset = proxy(
+      req('https://x.test/_next/static/chunks/main.js', {
+        cookie: `${SHARE_COOKIE}=${TOKEN}`,
+      }),
+    );
+    expect(asset.headers.get('Cache-Control')).toBeNull();
+  });
+
+  it('marks the cookie secure in production regardless of the request protocol', () => {
+    // Something upstream terminating TLS and forwarding plaintext must not
+    // cause a bearer token to be issued without Secure.
+    vi.stubEnv('NODE_ENV', 'production');
+    const res = proxy(req(`http://x.test/?k=${TOKEN}`));
+    expect(res.cookies.get(SHARE_COOKIE)?.secure).toBe(true);
   });
 });
 
