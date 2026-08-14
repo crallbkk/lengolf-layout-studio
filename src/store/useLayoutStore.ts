@@ -65,11 +65,10 @@ interface LayoutStore {
   /** Published-layout version this working copy came from. */
   seedVersion: number;
   /**
-   * True when this browser's saved layout predates the published one. Surfaced
-   * rather than acted on: silently replacing someone's work because a deploy
-   * happened is the one behaviour worse than not showing them the update.
+   * Set for the session in which this browser's stale saved copy was replaced
+   * by the published layout, so the UI can say so and offer the way back.
    */
-  publishedUpdate: boolean;
+  adoptedPublished: boolean;
 
   /* ---- history ----
    * Discrete edits push history themselves. Continuous gestures (drag, resize,
@@ -135,8 +134,7 @@ interface LayoutStore {
   /* ---- persistence ---- */
   hydrate(): void;
   resetToConcept(): void;
-  /** Adopt the published layout, discarding this browser's copy. */
-  loadPublished(): void;
+  dismissAdopted(): void;
   clearAll(): void;
   shareUrl(): string;
 }
@@ -275,7 +273,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   past: [],
   future: [],
   hydrated: false,
-  publishedUpdate: false,
+  adoptedPublished: false,
   seedVersion: SEED_VERSION,
 
   /* ---------------- history ---------------- */
@@ -595,15 +593,41 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     }
 
     if (loaded) {
+      /**
+       * A saved copy older than the published layout is REPLACED, not offered.
+       *
+       * Offering it was the polite version and it did not work: the saved copy
+       * outranks the shipped seed on every load, so a published layout reached
+       * nobody who had ever opened the app — which is everybody who matters.
+       * A shared link is exempt, because opening one is a deliberate act.
+       *
+       * Their copy is pushed onto the undo stack rather than discarded, so the
+       * old layout is one Undo away and this is not a one-way door.
+       */
       const from = loaded.seedVersion ?? 0;
-      set({
-        objects: loaded.objects,
-        typeOverrides: loaded.typeOverrides,
-        settings: loaded.settings,
-        seedVersion: from,
-        publishedUpdate: from < SEED_VERSION,
-        hydrated: true,
-      });
+      const stale = !fromHash && from < SEED_VERSION;
+
+      set(
+        stale
+          ? {
+              objects: conceptLayout(),
+              typeOverrides: loaded.typeOverrides,
+              settings: loaded.settings,
+              past: [loaded],
+              future: [],
+              seedVersion: SEED_VERSION,
+              adoptedPublished: true,
+              hydrated: true,
+            }
+          : {
+              objects: loaded.objects,
+              typeOverrides: loaded.typeOverrides,
+              settings: loaded.settings,
+              seedVersion: fromHash ? from : SEED_VERSION,
+              adoptedPublished: false,
+              hydrated: true,
+            },
+      );
       /**
        * Persist immediately, including when the layout came from a shared link.
        * Opening someone's link is an act of adopting that layout — it becomes
@@ -650,21 +674,13 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
       settings: { ...DEFAULT_SETTINGS },
       selectedIds: [],
       seedVersion: SEED_VERSION,
-      publishedUpdate: false,
+      adoptedPublished: false,
     });
     persist(get());
   },
 
-  loadPublished() {
-    // Undoable, so adopting the published layout is never a one-way door.
-    get().beginChange();
-    set({
-      objects: conceptLayout(),
-      selectedIds: [],
-      seedVersion: SEED_VERSION,
-      publishedUpdate: false,
-    });
-    persist(get());
+  dismissAdopted() {
+    set({ adoptedPublished: false });
   },
 
   clearAll() {
