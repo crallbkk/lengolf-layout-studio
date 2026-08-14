@@ -9,6 +9,17 @@ import type { ObjectKind, PlacedObject } from './types';
  * Bays in the drawing are two stacked rects (seating strip + hitting
  * enclosure); here they are one object with `seatingDepth` marking the split.
  */
+/**
+ * Bump whenever the published layout below changes.
+ *
+ * A browser that has opened the app once keeps its own saved copy forever, and
+ * that copy wins over this file — which is correct while someone is working,
+ * and wrong the moment a new layout is published, because they never see it.
+ * Stamping the version lets the app notice and OFFER the new one rather than
+ * either ignoring it or silently overwriting whatever the user was doing.
+ */
+export const SEED_VERSION = 2;
+
 type Seed = {
   type: ObjectKind;
   label: string;

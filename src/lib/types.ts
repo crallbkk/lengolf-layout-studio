@@ -110,4 +110,9 @@ export interface LayoutSnapshot {
   objects: PlacedObject[];
   typeOverrides: Partial<Record<ObjectKind, Pick<TypeSpec, 'minW' | 'minD'>>>;
   settings: Settings;
+  /**
+   * Which published layout this copy started from. Absent on anything saved
+   * before seed versioning existed, which is treated as "older than current".
+   */
+  seedVersion?: number;
 }

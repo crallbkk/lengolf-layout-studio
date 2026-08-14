@@ -203,10 +203,14 @@ function SofaArea({
 }) {
   const SEAT_H = 0.42;
   const SEAT_D = 0.72;
-  const BACK_H = 0.78;
-  const runW = o.w * 0.92;
-  const returnD = Math.min(o.d * 0.55, 2.2);
-  const tableCount = Math.max(1, Math.round(runW / 2.1));
+  const BACK_H = 0.5;
+  const INSET = 0.1;
+
+  const runW = o.w - 2 * INSET;
+  const backFront = -o.d / 2 + SEAT_D + INSET;
+  const armLen = Math.max(0.6, o.d / 2 - 0.2 - backFront);
+  const armCz = backFront + armLen / 2;
+  const armX = o.w / 2 - SEAT_D / 2 - INSET;
 
   const velvet = (
     <meshStandardMaterial color={palette.upholstery} roughness={0.95} />
@@ -214,70 +218,45 @@ function SofaArea({
 
   return (
     <group>
-      {/* Banquette along the glazing. */}
-      <group position={[0, 0, -o.d / 2 + SEAT_D / 2 + 0.1]}>
+      {/* Back run along the glazing. */}
+      <group position={[0, 0, -o.d / 2 + SEAT_D / 2 + INSET]}>
         <mesh position={[0, SEAT_H / 2, 0]}>
           <boxGeometry args={[runW, SEAT_H, SEAT_D]} />
           {velvet}
         </mesh>
-        <mesh position={[0, BACK_H / 2 + SEAT_H / 2, -SEAT_D / 2 + 0.09]}>
+        <mesh position={[0, SEAT_H + BACK_H / 2, -SEAT_D / 2 + 0.09]}>
           <boxGeometry args={[runW, BACK_H, 0.18]} />
           {velvet}
         </mesh>
       </group>
 
-      {/* Return down the side, so it reads as wrapping the corner. */}
-      <group position={[-o.w / 2 + SEAT_D / 2 + 0.1, 0, -o.d / 2 + returnD / 2 + 0.6]}>
-        <mesh position={[0, SEAT_H / 2, 0]}>
-          <boxGeometry args={[SEAT_D, SEAT_H, returnD]} />
-          {velvet}
-        </mesh>
-        <mesh position={[-SEAT_D / 2 + 0.09, BACK_H / 2 + SEAT_H / 2, 0]}>
-          <boxGeometry args={[0.18, BACK_H, returnD]} />
-          {velvet}
-        </mesh>
-      </group>
-
-      {/* Low tables in front of the banquette. */}
-      {Array.from({ length: tableCount }, (_, i) => (
-        <mesh
-          key={i}
-          position={[
-            -runW / 2 + (runW / tableCount) * (i + 0.5),
-            0.4,
-            -o.d / 2 + SEAT_D + 0.65,
-          ]}
-        >
-          <cylinderGeometry args={[0.34, 0.34, 0.06, 20]} />
-          <meshStandardMaterial color={palette.timber} roughness={0.7} />
-        </mesh>
-      ))}
-
-      {/* Loose armchairs facing back to the window. */}
-      {[-0.9, 0.9].map((dx) => (
-        <group key={dx} position={[dx, 0, -o.d / 2 + SEAT_D + 1.55]}>
-          <mesh position={[0, 0.21, 0]}>
-            <boxGeometry args={[0.74, 0.42, 0.74]} />
+      {/* Two arms, making a U that opens toward the bay. Everyone in it faces
+          the screen, which is the whole reason a VIP suite has its own lounge
+          rather than a row of chairs at a window. */}
+      {([-1, 1] as const).map((side) => (
+        <group key={side} position={[side * armX, 0, armCz]}>
+          <mesh position={[0, SEAT_H / 2, 0]}>
+            <boxGeometry args={[SEAT_D, SEAT_H, armLen]} />
             {velvet}
           </mesh>
-          <mesh position={[0, 0.62, 0.28]}>
-            <boxGeometry args={[0.74, 0.42, 0.18]} />
+          <mesh
+            position={[side * (SEAT_D / 2 - 0.09), SEAT_H + BACK_H / 2, 0]}
+          >
+            <boxGeometry args={[0.18, BACK_H, armLen]} />
             {velvet}
           </mesh>
         </group>
       ))}
+
+      {/* Low table in the middle of the U. */}
+      <mesh position={[0, 0.36, armCz - armLen * 0.1]}>
+        <boxGeometry args={[Math.min(runW - 2 * SEAT_D - 0.4, 1.5), 0.06, 0.75]} />
+        <meshStandardMaterial color={palette.timber} roughness={0.7} />
+      </mesh>
     </group>
   );
 }
 
-/**
- * An operable partition.
- *
- * Drawn as discrete panels with visible joints and a head track rather than as
- * one slab, because the whole point of the thing is that it stacks away. A
- * solid box here would read as a permanent wall and quietly turn a flexible
- * east end into a walled-off one.
- */
 function MovableWall({
   object: o,
   height,
@@ -681,8 +660,11 @@ function ObjectMesh({
             <meshStandardMaterial color={wallColor} roughness={0.9} />
           </mesh>
 
-          {/* High table row at the front, turned back into the room. */}
-          {seating > 0.4 ? (
+          {/* Bench row at the front, turned back into the room. The VIP bay
+              is the exception: it has its own U of sofas in the lounge zone
+              beyond, so a bench row here would be a second, worse version of
+              seating the suite already has. */}
+          {seating > 0.4 && o.type !== 'vip-bay' ? (
             <group position={[0, 0, -o.d / 2 + seating / 2]}>
               {/* Backless tufted velvet bench on a dark frame, turned back
                   into the room. Backless matters: a bench with a back walls the
