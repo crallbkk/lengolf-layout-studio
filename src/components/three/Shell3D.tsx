@@ -210,6 +210,31 @@ export default function Shell3D({
           })
         : null}
 
+      {/* Red sprinkler runs under the soffit. Pure signature: at Mercury Ville
+          the exposed black ceiling with red pipework IS the look, and without
+          them a charcoal soffit is just a dark lid. Drawn only when the palette
+          calls for services, i.e. not in the study view. */}
+      {palette.services !== palette.beam
+        ? BEAM_LINES.filter((b) => b.axis === 'y').map((b) => (
+            <mesh
+              key={`sprinkler-${b.id}`}
+              position={[
+                (b.from + b.to) / 2,
+                structure.beamSoffitM - 0.12,
+                b.at + 1.4,
+              ]}
+              rotation={[0, 0, Math.PI / 2]}
+            >
+              <cylinderGeometry args={[0.035, 0.035, b.to - b.from, 8]} />
+              <meshStandardMaterial
+                color={palette.services}
+                roughness={0.5}
+                metalness={0.2}
+              />
+            </mesh>
+          ))
+        : null}
+
       {/* Slab soffit. Off by default in orbit, where it would simply be a lid
           over the whole model. */}
       {showCeiling ? (

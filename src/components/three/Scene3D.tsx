@@ -128,7 +128,7 @@ export default function Scene3D({
           none here to communicate. The finished palette turns it down to the
           low, warm, pooled light the concept actually calls for, and lets the
           bay screens and coves do the work. */}
-      <hemisphereLight args={['#ffffff', '#8d8b85', palette.hemi]} />
+      <hemisphereLight args={[palette.hemiSky, palette.hemiGround, palette.hemi]} />
       <ambientLight intensity={palette.ambient} />
       <directionalLight position={[18, 26, -12]} intensity={palette.key} />
       <directionalLight position={[-14, 18, 22]} intensity={palette.fill} />

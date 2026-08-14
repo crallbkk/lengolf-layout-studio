@@ -134,7 +134,7 @@ function FloorFinish({
               ? palette.turf
               : palette.useCatalogColours
                 ? spec.fill
-                : palette.floor
+                : palette.woodTile
           }
           roughness={1}
         />
@@ -426,14 +426,54 @@ function ObjectMesh({
             />
           </mesh>
 
-          {/* Turf across the whole enclosure floor, not a small mat: both
-              reference bays are turfed wall to wall behind the step. */}
-          <mesh position={[0, platform + 0.02, zones.enclosureCz]}>
+          {/* Light oak deck across the bay, with turf ONLY as the hitting
+              mat. `ref_bays.jpg` shows another operator turfed wall to wall and
+              an earlier pass copied it; the LENGOLF material board is explicit
+              that turf is "hitting mats and putting only", never wall to
+              wall. */}
+          <mesh position={[0, platform + 0.015, zones.enclosureCz]}>
             <boxGeometry
-              args={[o.w - 2 * PANEL, 0.04, zones.enclosureDepth - 0.04]}
+              args={[o.w - 2 * PANEL, 0.03, zones.enclosureDepth - 0.04]}
             />
-            <meshStandardMaterial color={palette.turf} roughness={1} />
+            <meshStandardMaterial
+              color={palette.useCatalogColours ? darken(spec.fill, 0.06) : palette.bayFloor}
+              roughness={0.8}
+            />
           </mesh>
+          {(() => {
+            /**
+             * Two surfaces, not one. The player stands on a SMALL hitting mat;
+             * between that mat and the screen is the ball-return run, which is
+             * darker turf. Running one bright mat from the screen to the tee
+             * made the bay read as a putting green with a screen at the end.
+             */
+            const matD = Math.min(1.5, zones.playDepth);
+            const matW = Math.min(o.w - 2 * PANEL - 0.6, 1.9);
+            const matBack = zones.playCz + matD / 2;
+            const runDepth = zones.screenFaceCz - matBack;
+            return (
+              <>
+                {runDepth > 0.05 ? (
+                  <mesh
+                    position={[
+                      0,
+                      platform + 0.035,
+                      zones.screenFaceCz - runDepth / 2,
+                    ]}
+                  >
+                    <boxGeometry
+                      args={[o.w - 2 * PANEL - 0.1, 0.025, runDepth]}
+                    />
+                    <meshStandardMaterial color={palette.turfDark} roughness={1} />
+                  </mesh>
+                ) : null}
+                <mesh position={[0, platform + 0.045, zones.playCz]}>
+                  <boxGeometry args={[matW, 0.045, matD]} />
+                  <meshStandardMaterial color={palette.turf} roughness={1} />
+                </mesh>
+              </>
+            );
+          })()}
 
           {/* Screen wall: steel frame and padding, filling the setback so the
               assembly stands clear of the columns rather than flush with the
@@ -576,35 +616,30 @@ function ObjectMesh({
           {/* High table row at the front, turned back into the room. */}
           {seating > 0.4 ? (
             <group position={[0, 0, -o.d / 2 + seating / 2]}>
-              {/* Seat. */}
-              <mesh position={[0, BENCH_H / 2, 0]}>
-                <boxGeometry args={[o.w * 0.78, BENCH_H, 0.55]} />
+              {/* Backless tufted velvet bench on a dark frame, turned back
+                  into the room. Backless matters: a bench with a back walls the
+                  bay off from the room behind it, and every Mercury Ville bench
+                  is deliberately open. */}
+              <mesh position={[0, BENCH_H, 0]}>
+                <boxGeometry args={[o.w * 0.74, 0.16, 0.52]} />
                 <meshStandardMaterial
                   color={
                     palette.useCatalogColours
                       ? darken(spec.stroke, 0.35)
-                      : palette.upholstery
+                      : palette.bench
                   }
-                  roughness={0.85}
+                  roughness={0.9}
                 />
               </mesh>
-              {/* Back, turned into the room, per every Chidlom bay. */}
-              <mesh position={[0, BENCH_H + 0.22, -0.22]}>
-                <boxGeometry args={[o.w * 0.78, 0.44, 0.12]} />
-                <meshStandardMaterial
-                  color={
-                    palette.useCatalogColours
-                      ? darken(spec.stroke, 0.45)
-                      : palette.upholstery
-                  }
-                  roughness={0.85}
-                />
+              <mesh position={[0, (BENCH_H - 0.08) / 2, 0]}>
+                <boxGeometry args={[o.w * 0.68, BENCH_H - 0.08, 0.4]} />
+                <meshStandardMaterial color="#2f2b28" roughness={0.85} />
               </mesh>
-              {/* Timber armrest table along the back — the detail that makes a
-                  LENGOLF bay social rather than a practice booth. */}
-              <mesh position={[0, BENCH_H + 0.46, -0.22]}>
-                <boxGeometry args={[o.w * 0.82, 0.05, 0.3]} />
-                <meshStandardMaterial color={palette.timber} roughness={0.7} />
+
+              {/* Dark timber side table at the end of the run. */}
+              <mesh position={[o.w * 0.4, 0.36, 0]}>
+                <boxGeometry args={[0.46, 0.72, 0.46]} />
+                <meshStandardMaterial color="#4a3f36" roughness={0.8} />
               </mesh>
             </group>
           ) : null}

@@ -21,6 +21,8 @@ export type PaletteMode = 'schematic' | 'finished';
 export interface Palette {
   /** Shell. */
   floor: string;
+  /** Wood-look tile, used only where the concept calls for it. */
+  woodTile: string;
   bayFloor: string;
   soffit: string;
   beam: string;
@@ -37,9 +39,13 @@ export interface Palette {
   cove: string;
   coveIntensity: number;
   turf: string;
+  /** Ball-return run between the screen and the hitting mat. */
+  turfDark: string;
 
   /** Furniture. */
   upholstery: string;
+  /** Bay benches specifically — a lighter tone than the bar seating. */
+  bench: string;
   timber: string;
   brass: string;
   barCounter: string;
@@ -47,6 +53,8 @@ export interface Palette {
 
   /** Environment. */
   background: string;
+  hemiSky: string;
+  hemiGround: string;
   ambient: number;
   hemi: number;
   key: number;
@@ -55,16 +63,20 @@ export interface Palette {
   useCatalogColours: boolean;
 }
 
-/** Brand palette, from the deck. */
-const FOREST = '#005a32';
-const DEEP_GREEN = '#003d24';
-const GOLD = '#c8a96e';
-const WARM_BLACK = '#16211b';
+/**
+ * Brand reference, from the deck.
+ *
+ * Nothing here survives into the finished render unchanged. The greens are
+ * brand colours for print and screen; in a lit 3D room they read as black, so
+ * the venue's own materials — measured off the Mercury Ville photographs —
+ * take precedence. Kept here as the reference they are.
+ */
 const OFF_WHITE = '#f1ede6';
 
 export const PALETTES: Record<PaletteMode, Palette> = {
   schematic: {
     floor: '#e8e6e1',
+    woodTile: '#e8e6e1',
     bayFloor: '#e8e6e1',
     soffit: '#a9a69f',
     beam: '#a9a69f',
@@ -80,14 +92,18 @@ export const PALETTES: Record<PaletteMode, Palette> = {
     cove: '#ffffff',
     coveIntensity: 0,
     turf: '#5f9e56',
+    turfDark: '#3f7a44',
 
     upholstery: '#1f4d3a',
+    bench: '#2f6b5c',
     timber: '#a9762f',
     brass: '#c8a96e',
     barCounter: '#cfcdc6',
     barFront: '#b7b4ac',
 
     background: '#dee5e8',
+    hemiSky: '#ffffff',
+    hemiGround: '#8d8b85',
     ambient: 0.5,
     hemi: 1.15,
     key: 0.75,
@@ -96,47 +112,95 @@ export const PALETTES: Record<PaletteMode, Palette> = {
   },
 
   finished: {
-    // Large-format pale stone in circulation, light oak plank at the bays.
-    floor: '#cdc7bd',
-    bayFloor: '#b08a5c',
-    // Exposed soffit painted charcoal, services left visible.
-    soffit: WARM_BLACK,
-    beam: '#1d2722',
-    column: '#2a3330',
-    blockwork: '#242e2a',
-    glazingFrame: '#1a1f1d',
-    // The red sprinkler runs are a signature of the Chidlom ceiling.
-    services: '#8c2f2a',
+    /**
+     * Retuned against the Mercury Ville photographs rather than the written
+     * palette alone, because the written version reads darker than the venue
+     * actually is. The floor there is light oak plank through the whole bar and
+     * lounge — not pale stone — and a light floor is most of why the real room
+     * feels warm rather than black.
+     */
+    /**
+     * Grey tile is the floor. Wood-look tile is only the lounge and event
+     * areas, and light oak only the bay platforms and table tops — an earlier
+     * pass ran oak wall to wall, which is the same mistake as turfing
+     * everything, one material doing a job three materials share.
+     */
+    floor: '#c8c6c1',
+    woodTile: '#c9a274',
+    bayFloor: '#c9a274',
+    // Only the soffit is actually dark. Everything else is raw concrete.
+    soffit: '#20252a',
+    beam: '#2b3136',
+    // "Grey polished concrete — bar counter, columns", from the slide. These
+    // were charcoal, and columns are the largest vertical surfaces in the room:
+    // painting them near-black is most of why the render read as a dark cave
+    // when the material board says the shell is RAW CONCRETE.
+    column: '#8f8f8b',
+    blockwork: '#8a8781',
+    glazingFrame: '#2a2e30',
+    // Red sprinkler runs, the signature of the Chidlom ceiling.
+    services: '#b3352c',
 
-    bayPanel: '#242b28',
-    bayPlatform: '#8a6a45',
-    screenEmissive: '#eaf3ec',
-    screenIntensity: 1.5,
+    // Charcoal acoustic felt: bay linings, sound control.
+    bayPanel: '#333a37',
+    // Light oak: table tops, bay platforms.
+    bayPlatform: '#c9a274',
+    screenEmissive: '#eef5ee',
+    screenIntensity: 1.4,
     // Warm linear LED cove above each bay opening, and the vertical strips
     // between bays, are what make a run of bays read as separate rooms.
-    cove: GOLD,
-    coveIntensity: 2.4,
-    turf: '#3f8a3a',
+    cove: '#e0b972',
+    coveIntensity: 2.2,
+    // "Turf — hitting mats and putting ONLY." Never wall to wall; see the mat
+    // in Objects3D, which is what that rule actually constrains.
+    turf: '#43a047',
+    turfDark: '#1d5228',
 
-    upholstery: DEEP_GREEN,
-    timber: '#9a6b3a',
-    brass: GOLD,
-    // Grey polished concrete counter, ribbed dark green panel front.
-    barCounter: '#8e8b85',
-    barFront: FOREST,
-
-    background: '#0e1512',
     /**
-     * Low and warm, but not black. The first pass took the concept's "low,
-     * warm, pooled, deep shadow" literally and dropped ambient to 0.24 with no
-     * light sources in the room, so the venue rendered as a dark smear. Pooled
-     * light needs pools: the lift here is paid for by the bay coves and the
-     * screens actually emitting, below.
+     * Teal-green velvet, not the brand's deep green. Every seat at Mercury
+     * Ville — bar stools, tub chairs, the banquette — is this lighter, bluer
+     * green; DEEP_GREEN renders as black in a dark room and made the benches
+     * vanish entirely.
      */
-    ambient: 0.5,
-    hemi: 0.62,
-    key: 0.34,
-    fill: 0.2,
+    /**
+     * Between the two sources on purpose. The material board calls this deep
+     * green velvet and shows it almost black; the Mercury Ville photographs
+     * show every seat reading as a lighter teal-green under warm light. The
+     * board's swatch renders as a black hole in a lit room, so this sits where
+     * the venue actually looks.
+     */
+    upholstery: '#1f5347',
+    /**
+     * The bay benches are their own colour. The material board's "deep green
+     * velvet" covers banquettes, armchairs and bar stools — the bar seating —
+     * but the tufted benches in the Mercury Ville bays are a much lighter
+     * teal-green, and rendering them in bar green is why they kept
+     * disappearing into the bay lining behind them.
+     */
+    bench: '#2d7a66',
+    // Light oak, for table tops.
+    timber: '#c9a274',
+    brass: '#d3ad64',
+    // Grey polished concrete counter, ribbed deep green panel front.
+    barCounter: '#8f8f8b',
+    barFront: '#1d4b40',
+
+    background: '#1b2226',
+    // Warm bounce off an oak floor, dark above. This is what the photographs
+    // show: a black ceiling over a bright warm floor, not a dark room.
+    hemiSky: '#e2e9ec',
+    hemiGround: '#b8b4ad',
+    /**
+     * "Low, warm, pooled, deep shadow" describes the CEILING and the walls, not
+     * the whole venue. Taking it literally — ambient 0.24, no emitters — made
+     * the room render as a dark smear. Mercury Ville is dark overhead and well
+     * lit at table height, so the ambient carries the floor and the coves and
+     * screens do the pooling.
+     */
+    ambient: 0.95,
+    hemi: 1.0,
+    key: 0.55,
+    fill: 0.32,
     useCatalogColours: false,
   },
 };
