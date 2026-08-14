@@ -36,9 +36,12 @@ function Tile({
           ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/40'
           : 'border-black/10 bg-black/[0.02] dark:border-white/15 dark:bg-white/[0.03]';
 
+  // max-md: undoes the fixed width so the tile fills its grid cell in the
+  // mobile sheet. The fixed widths exist so tiles never resize as the numbers
+  // change; in a two-column grid the column already guarantees that.
   return (
     <div
-      className={`${width} shrink-0 rounded-md border px-3 py-2 ${toneRing}`}
+      className={`${width} max-md:w-auto shrink-0 rounded-md border px-3 py-2 ${toneRing}`}
     >
       <div className="truncate text-[10px] font-medium uppercase tracking-wide opacity-60">
         {label}
@@ -72,7 +75,7 @@ export default function StatsBar() {
   return (
     <section
       aria-label="Layout statistics"
-      className="flex w-full items-stretch gap-2 overflow-x-auto border-y border-black/10 px-3 py-2 dark:border-white/15"
+      className="flex w-full items-stretch gap-2 overflow-x-auto border-y border-black/10 px-3 py-2 max-md:grid max-md:grid-cols-2 max-md:overflow-x-visible max-md:border-y-0 dark:border-white/15"
     >
       <Tile
         label="Unit area"

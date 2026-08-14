@@ -46,6 +46,8 @@ interface SelectionHandlesProps {
   object: PlacedObject;
   viewport: Viewport;
   pixelWidth: number;
+  /** True on touchscreens: grips get finger-sized hit areas. */
+  coarsePointer?: boolean;
   /** Does NOT stop propagation — the canvas root owns pointer capture. */
   onHandlePointerDown: (
     handle: HandleId,
@@ -57,15 +59,47 @@ export default function SelectionHandles({
   object,
   viewport,
   pixelWidth,
+  coarsePointer = false,
   onHandlePointerDown,
 }: SelectionHandlesProps) {
   const hw = object.w / 2;
   const hd = object.d / 2;
 
   const half = px(4.5, viewport, pixelWidth);
-  const hit = px(11, viewport, pixelWidth);
-  const stalk = px(26, viewport, pixelWidth);
+
+  /**
+   * Hit areas, not grips: the drawn squares stay 9 px at every zoom because
+   * that is what reads as a handle. Only what you can grab changes.
+   *
+   * Two bounds, and the order of them matters:
+   *
+   * The cap at a quarter of the shorter side stops a touch-sized hit area
+   * eating the object it belongs to. Eight 44 px handles around a bay 60 px
+   * wide on screen would blanket it, and the object could then only ever be
+   * resized, never dragged. Capping each handle's inward reach at w/4 and d/4
+   * keeps the middle half of the shape a move target.
+   *
+   * The floor at the mouse size then stops that cap backfiring. An object that
+   * is small *on screen* — a 2.75 m deep bar zoomed out to 31 px — has no room
+   * for either size, and without the floor the cap would hand touch a 16 px
+   * target where a mouse gets 22 px, which is exactly backwards. Touch is never
+   * worse than mouse; it is better whenever the object is big enough to allow
+   * it, and the way to edit something 31 px tall is to zoom in first.
+   */
+  const mouseHit = px(11, viewport, pixelWidth);
+  const hit = Math.max(
+    mouseHit,
+    Math.min(
+      px(coarsePointer ? 22 : 11, viewport, pixelWidth),
+      Math.min(object.w, object.d) / 4,
+    ),
+  );
+
+  // A longer stalk on touch, so the rotate grip clears the fingertip that is
+  // already covering the top edge of the object.
+  const stalk = px(coarsePointer ? 44 : 26, viewport, pixelWidth);
   const rotR = px(6, viewport, pixelWidth);
+  const rotHit = px(coarsePointer ? 22 : 11, viewport, pixelWidth);
 
   return (
     <g transform={`translate(${object.cx} ${object.cy}) rotate(${object.rotation})`}>
@@ -83,7 +117,7 @@ export default function SelectionHandles({
       <circle
         cx={0}
         cy={-hd - stalk}
-        r={hit}
+        r={rotHit}
         fill="transparent"
         stroke="none"
         style={{ cursor: 'grab' }}

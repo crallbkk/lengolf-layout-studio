@@ -7,6 +7,7 @@ import * as THREE from 'three';
 
 import Context3D from './Context3D';
 
+import { useIsMobile } from '@/hooks/useMediaQuery';
 import type { PlacedObject } from '@/lib/types';
 import {
   swingClearances,
@@ -87,6 +88,7 @@ export default function Scene3D({
   onClearances,
 }: Scene3DProps) {
   const palette = PALETTES[paletteMode];
+  const isMobile = useIsMobile();
 
   const clearances = useMemo(
     () => swingClearances(objects, structure),
@@ -104,7 +106,14 @@ export default function Scene3D({
   return (
     <Canvas
       shadows={false}
-      dpr={[1, 2]}
+      /**
+       * A phone's device pixel ratio is routinely 3, so `[1, 2]` asks a mobile
+       * GPU to shade four times the pixels of a 1x buffer — and
+       * preserveDrawingBuffer means that buffer is also held rather than
+       * discarded after each present. 1.5 keeps edges acceptably smooth at
+       * roughly half the fill cost and a much smaller allocation.
+       */
+      dpr={isMobile ? [1, 1.5] : [1, 2]}
       camera={{ fov: 55, near: 0.1, far: 400, position: view.position }}
       onPointerMissed={onBackgroundClick}
       // preserveDrawingBuffer keeps the framebuffer readable after the frame is

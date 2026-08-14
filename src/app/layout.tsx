@@ -25,15 +25,21 @@ export const viewport: Viewport = {
   // the pointer maths and makes measurement feel unreliable on iPad.
   maximumScale: 1,
   userScalable: false,
+  // Draw into the display cutout and home-indicator strip so the canvas gets
+  // the whole screen. Everything fixed to an edge pads itself back out with
+  // env(safe-area-inset-*), so nothing lands under the indicator.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} antialiased`}
     >
-      <body className="h-full overflow-hidden">{children}</body>
+      {/* Height comes from globals.css (100dvh) — see the note there for why it
+          cannot be an h-full class. */}
+      <body className="overflow-hidden">{children}</body>
     </html>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 
 import { useLayoutStore } from '@/store/useLayoutStore';
 import type { PlacedObject, TypeSpec } from '@/lib/types';
@@ -20,6 +20,9 @@ const HARD_STROKE = '#dc2626';
 const SOFT_STROKE = '#d97706';
 const SELECTED_STROKE = '#111827';
 
+/** How far a finger may travel and still count as a tap rather than a drag. */
+const TAP_SLOP_PX = 8;
+
 export interface ObjectShapeProps {
   object: PlacedObject;
   spec: TypeSpec;
@@ -29,6 +32,9 @@ export interface ObjectShapeProps {
   onPointerDown: (e: ReactPointerEvent<SVGGElement>) => void;
   viewport: Viewport;
   pixelWidth: number;
+  /** True on touchscreens: the padlock gets a finger-sized target, and stops
+   *  relying on hover to be discovered. */
+  coarsePointer?: boolean;
 }
 
 function ObjectShape({
@@ -40,6 +46,7 @@ function ObjectShape({
   onPointerDown,
   viewport,
   pixelWidth,
+  coarsePointer = false,
 }: ObjectShapeProps) {
   const { cx, cy, w, d, rotation } = object;
   const hw = w / 2;
@@ -74,9 +81,50 @@ function ObjectShape({
   // Hide the padlock when it would swamp the object it belongs to.
   const showLock = widthPx >= 30 && depthPx >= 26;
 
+  /**
+   * The 0.32 rest opacity was "dimmed until you hover it" — a rule that assumes
+   * a cursor. On a phone there is no hover state to promote it out of, so the
+   * only affordance for locking is a barely-visible ghost. Touch gets it at a
+   * legible weight instead.
+   */
+  const lockOpacity = object.locked ? 1 : coarsePointer ? 0.7 : 0.32;
+
+  /**
+   * Finger-sized target on touch, clamped to a third of the shorter side so the
+   * corner it sits in never becomes the whole object — otherwise a tap meant to
+   * select and drag a small bay would toggle its lock instead.
+   */
+  const lockHitHalf = coarsePointer
+    ? Math.max(
+        lockSize * 0.7,
+        Math.min(px(22, viewport, pixelWidth), Math.min(w, d) / 3),
+      )
+    : lockSize * 0.7;
+
+  /**
+   * Toggle on release, and only if the finger stayed put.
+   *
+   * pointerdown still has to swallow the event — that is what stops the parent
+   * group starting a drag — but committing the toggle there means a finger that
+   * lands in the enlarged corner target intending to drag the bay locks it
+   * instead, and the object then refuses to move with nothing on screen saying
+   * why. A tap is a press and a release in the same place; a drag that begins
+   * here now simply does nothing, which is the safe failure.
+   */
+  const lockDown = useRef<{ id: number; x: number; y: number } | null>(null);
+
   const handleLockPointerDown = (e: ReactPointerEvent<SVGGElement>) => {
     e.stopPropagation();
     e.preventDefault();
+    lockDown.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  };
+
+  const handleLockPointerUp = (e: ReactPointerEvent<SVGGElement>) => {
+    const start = lockDown.current;
+    lockDown.current = null;
+    if (!start || start.id !== e.pointerId) return;
+    e.stopPropagation();
+    if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > TAP_SLOP_PX) return;
     useLayoutStore.getState().toggleLock(object.id);
   };
 
@@ -178,15 +226,19 @@ function ObjectShape({
         <g
           transform={`translate(${lockCx} ${lockCy})`}
           onPointerDown={handleLockPointerDown}
+          onPointerUp={handleLockPointerUp}
+          onPointerCancel={() => {
+            lockDown.current = null;
+          }}
           style={{ cursor: 'pointer' }}
-          opacity={object.locked ? 1 : 0.32}
+          opacity={lockOpacity}
         >
           {/* Generous invisible hit target. */}
           <rect
-            x={-lockSize * 0.7}
-            y={-lockSize * 0.7}
-            width={lockSize * 1.4}
-            height={lockSize * 1.4}
+            x={-lockHitHalf}
+            y={-lockHitHalf}
+            width={lockHitHalf * 2}
+            height={lockHitHalf * 2}
             fill="transparent"
             stroke="none"
           />
