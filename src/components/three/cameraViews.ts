@@ -36,6 +36,8 @@ export const CAMERA_VIEWS = {
   bayRun: view([3.2, EYE, 2.6], [22, 1.2, 12.4]),
   /** Looking north at the curved plaza glazing. */
   glazing: view([9.2, EYE, 9.8], [7.5, 1.5, 0]),
+  /** Inside the VIP zone, looking across its sofa area to its own window. */
+  vip: view([26.8, EYE, 8.6], [24.6, 1.3, 3.2]),
 };
 
 export type CameraViewKey = keyof typeof CAMERA_VIEWS;
