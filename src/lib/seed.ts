@@ -89,7 +89,17 @@ const SEEDS: Seed[] = [
    * the partition is FOR: closed, the VIP guest gets a bay, a lounge and a
    * window rather than a booth with a curtain.
    */
-  { type: 'lounge', label: 'VIP lounge', x: 23435, y: 3133, w: 3463, d: 2767 },
+  {
+    type: 'lounge',
+    label: 'VIP lounge',
+    x: 23435,
+    y: 3133,
+    w: 3463,
+    // Runs all the way back to the VIP bay at 6594. Stopping short at 5900 left
+    // a bare strip of tile between the sofa and the bay, which is the one part
+    // of that zone anybody actually walks through.
+    d: 3461,
+  },
   { type: 'pantry', label: 'Pantry', x: 26998, y: 3444, w: 1842, d: 3050 },
   { type: 'lockers', label: 'Lockers / merch', x: 100, y: 7077, w: 1385, d: 6200 },
   /**
