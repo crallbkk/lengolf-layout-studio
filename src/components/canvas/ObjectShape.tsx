@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 
 import { useLayoutStore } from '@/store/useLayoutStore';
 import type { PlacedObject, TypeSpec } from '@/lib/types';
@@ -19,6 +19,9 @@ import { px, metresPerPixel, type Viewport } from '@/lib/viewport';
 const HARD_STROKE = '#dc2626';
 const SOFT_STROKE = '#d97706';
 const SELECTED_STROKE = '#111827';
+
+/** How far a finger may travel and still count as a tap rather than a drag. */
+const TAP_SLOP_PX = 8;
 
 export interface ObjectShapeProps {
   object: PlacedObject;
@@ -98,9 +101,30 @@ function ObjectShape({
       )
     : lockSize * 0.7;
 
+  /**
+   * Toggle on release, and only if the finger stayed put.
+   *
+   * pointerdown still has to swallow the event — that is what stops the parent
+   * group starting a drag — but committing the toggle there means a finger that
+   * lands in the enlarged corner target intending to drag the bay locks it
+   * instead, and the object then refuses to move with nothing on screen saying
+   * why. A tap is a press and a release in the same place; a drag that begins
+   * here now simply does nothing, which is the safe failure.
+   */
+  const lockDown = useRef<{ id: number; x: number; y: number } | null>(null);
+
   const handleLockPointerDown = (e: ReactPointerEvent<SVGGElement>) => {
     e.stopPropagation();
     e.preventDefault();
+    lockDown.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  };
+
+  const handleLockPointerUp = (e: ReactPointerEvent<SVGGElement>) => {
+    const start = lockDown.current;
+    lockDown.current = null;
+    if (!start || start.id !== e.pointerId) return;
+    e.stopPropagation();
+    if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > TAP_SLOP_PX) return;
     useLayoutStore.getState().toggleLock(object.id);
   };
 
@@ -202,6 +226,10 @@ function ObjectShape({
         <g
           transform={`translate(${lockCx} ${lockCy})`}
           onPointerDown={handleLockPointerDown}
+          onPointerUp={handleLockPointerUp}
+          onPointerCancel={() => {
+            lockDown.current = null;
+          }}
           style={{ cursor: 'pointer' }}
           opacity={lockOpacity}
         >

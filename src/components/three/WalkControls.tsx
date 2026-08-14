@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 
 import type { CameraView } from './cameraViews';
-import { walkInput } from './walkInput';
+import { resetWalkInput, walkInput } from './walkInput';
 
 /**
  * First-person controls: drag to look, WASD to walk.
@@ -40,8 +40,9 @@ export default function WalkControls({
 
   const yaw = useRef(0);
   const pitch = useRef(0);
-  const dragging = useRef(false);
-  /** Last pointer position of the look drag; see the note in the effect. */
+  /** Pointer that owns the look drag, or null. See the note in the effect. */
+  const lookPointer = useRef<number | null>(null);
+  /** Its last position; deltas are measured from this. */
   const lastLook = useRef({ x: 0, y: 0 });
   const keys = useRef<Set<string>>(new Set());
   /**
@@ -56,9 +57,30 @@ export default function WalkControls({
   useEffect(() => {
     const el = store.getState().gl.domElement;
 
+    /**
+     * The thumbstick zeroes this on its own unmount, and today it always
+     * unmounts alongside these controls. But this component is the only reader
+     * of walkInput, and it should not depend on a component it does not own to
+     * hand it a sane starting value — a stale deflection here means a camera
+     * that drifts forever with nothing touching it.
+     */
+    resetWalkInput();
+
+    /**
+     * One pointer owns the look drag, and every later event is matched against
+     * its id.
+     *
+     * Without that, a second finger — and pinch is the reflex gesture on a 3D
+     * view, which the orbit-mode hint even advertises — overwrote the reference
+     * position, so the next 3 px move of the FIRST finger was measured against
+     * the second finger's coordinates and snapped the camera through tens of
+     * degrees in one frame. Lifting either finger then ended the drag for both.
+     * This was latent while deltas came from `movementX` (always 0 on touch);
+     * measuring from clientX is what made it reachable.
+     */
     const onPointerDown = (e: PointerEvent) => {
-      if (e.button !== 0) return;
-      dragging.current = true;
+      if (e.button !== 0 || lookPointer.current !== null) return;
+      lookPointer.current = e.pointerId;
       lastLook.current = { x: e.clientX, y: e.clientY };
       el.setPointerCapture(e.pointerId);
       el.style.cursor = 'grabbing';
@@ -72,7 +94,7 @@ export default function WalkControls({
      * mouse, so this costs desktop nothing.
      */
     const onPointerMove = (e: PointerEvent) => {
-      if (!dragging.current) return;
+      if (lookPointer.current !== e.pointerId) return;
       const dx = e.clientX - lastLook.current.x;
       const dy = e.clientY - lastLook.current.y;
       lastLook.current = { x: e.clientX, y: e.clientY };
@@ -84,8 +106,8 @@ export default function WalkControls({
       );
     };
     const endDrag = (e: PointerEvent) => {
-      if (!dragging.current) return;
-      dragging.current = false;
+      if (lookPointer.current !== e.pointerId) return;
+      lookPointer.current = null;
       if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
       el.style.cursor = 'grab';
     };

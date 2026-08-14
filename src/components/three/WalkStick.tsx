@@ -45,8 +45,12 @@ export default function WalkStick() {
       resetWalkInput();
       return;
     }
+    // Rescale the surviving range back to 0..1 so speed ramps up from the
+    // deadzone edge. Passing the raw magnitude through would step straight from
+    // stationary to 16% of walking speed the moment the threshold is crossed.
+    const ramp = (mag - DEADZONE) / (1 - DEADZONE) / mag;
     // Screen y grows downward; pushing the stick up must walk forward.
-    setWalkInput(-ny, nx);
+    setWalkInput(-ny * ramp, nx * ramp);
   }, []);
 
   const onDown = useCallback(
@@ -84,9 +88,13 @@ export default function WalkStick() {
       className="pointer-events-auto absolute left-3 z-20 md:hidden"
       style={{ bottom: 'calc(max(env(safe-area-inset-bottom), 0.5rem) + 4.5rem)' }}
     >
+      {/* `group`, not `application`: application tells a screen reader to stop
+          intercepting keys, which only makes sense for something focusable that
+          handles them. This is a pointer-only control, and the keyboard route
+          to the same thing (W A S D) is always available. */}
       <div
-        role="application"
-        aria-label="Walk stick — drag to move through the model"
+        role="group"
+        aria-label="Walk stick — drag to move through the model. W A S D also walks."
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}

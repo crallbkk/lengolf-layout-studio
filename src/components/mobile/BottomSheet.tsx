@@ -36,6 +36,9 @@ const SNAP_HEIGHT: Record<SheetSnap, string> = {
 const DISMISS_DY = 96;
 const SNAP_DY = 44;
 
+const FOCUSABLE =
+  'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
 interface BottomSheetProps {
   open: boolean;
   onClose: () => void;
@@ -67,44 +70,91 @@ function SheetPanel({
   /** Live finger travel while the handle is held; null when not dragging. */
   const [dragDy, setDragDy] = useState<number | null>(null);
   const dragStartY = useRef(0);
+  const dragPointerId = useRef<number | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    const panel = panelRef.current;
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        // The plan canvas also listens for Escape on window, where it clears
-        // the selection. Dismissing the sheet should not also do that.
-        e.stopPropagation();
+        /**
+         * Capture phase, and stopImmediatePropagation rather than
+         * stopPropagation.
+         *
+         * FloorPlanCanvas also listens for Escape on `window`, where it clears
+         * the selection — so dismissing a sheet used to silently wipe the
+         * user's selection too. stopPropagation cannot prevent that: two
+         * listeners on the same node are already at the end of the propagation
+         * path, so there is nothing left to stop. Registering in the capture
+         * phase puts this listener ahead of every bubble-phase window listener
+         * whatever order they were added in, and the immediate variant is what
+         * actually halts the rest of the dispatch.
+         */
+        e.stopImmediatePropagation();
+        e.preventDefault();
         onClose();
+        return;
+      }
+
+      // The dialog claims aria-modal, so Tab has to honour that claim.
+      if (e.key !== 'Tab' || !panel) return;
+      const items = [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+        (el) => el.offsetParent !== null,
+      );
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || active === panel)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
       }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [onClose]);
 
   // Move focus into the sheet so the next Tab lands inside it and a screen
-  // reader announces what just opened.
+  // reader announces what opened — then hand it back to whatever opened the
+  // sheet, so a keyboard user does not restart at the top of the document.
   useEffect(() => {
+    const restoreTo = document.activeElement as HTMLElement | null;
     panelRef.current?.focus();
+    return () => {
+      if (restoreTo && document.contains(restoreTo)) restoreTo.focus();
+    };
   }, []);
 
   const onHandleDown = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    // The close button and anything in `trailing` are descendants of this
+    // drag surface. Capturing their pointers here would both start a sheet
+    // drag on a tap meant for them and, under the pointer-capture target
+    // override, redirect their click to this element so it never fires.
+    if ((e.target as HTMLElement).closest('button')) return;
     dragStartY.current = e.clientY;
+    dragPointerId.current = e.pointerId;
     setDragDy(0);
     e.currentTarget.setPointerCapture(e.pointerId);
   }, []);
 
   const onHandleMove = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
-      if (dragDy === null) return;
+      if (dragPointerId.current !== e.pointerId) return;
       setDragDy(e.clientY - dragStartY.current);
     },
-    [dragDy],
+    [],
   );
 
   const onHandleUp = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (dragPointerId.current !== e.pointerId) return;
       const dy = dragDy;
+      dragPointerId.current = null;
       setDragDy(null);
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
@@ -123,12 +173,11 @@ function SheetPanel({
 
   return (
     <div className="fixed inset-0 z-40 md:hidden">
-      <button
-        type="button"
-        aria-label={`Close ${title}`}
-        onClick={onClose}
-        className="absolute inset-0 h-full w-full cursor-default bg-black/25"
-      />
+      {/* Not a button: it would carry the same accessible name as the real
+          close control, and a screen-reader user would hear "Close Objects"
+          twice with no way to tell which is which. Escape and the × are the
+          accessible paths out; this is the pointer shortcut. */}
+      <div aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-black/25" />
 
       <div
         ref={panelRef}
@@ -161,6 +210,7 @@ function SheetPanel({
                 type="button"
                 onClick={onClose}
                 aria-label={`Close ${title}`}
+                style={{ touchAction: 'manipulation' }}
                 className="-mr-2 flex h-11 w-11 items-center justify-center rounded-md text-lg leading-none opacity-60 hover:bg-black/5 hover:opacity-100"
               >
                 <span aria-hidden="true">×</span>

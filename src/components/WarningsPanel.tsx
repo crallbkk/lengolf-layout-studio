@@ -19,7 +19,15 @@ const MAX_RENDERED = 50;
  * Two nested disclosure controls invite you to collapse a panel inside a sheet
  * and be left looking at an empty sheet.
  */
-export default function WarningsPanel({ headless = false }: { headless?: boolean }) {
+export default function WarningsPanel({
+  headless = false,
+  onSelect,
+}: {
+  headless?: boolean;
+  /** Fired after a warning is picked, so a sheet carrying this can get out of
+   *  the way of the plan the selection just happened on. */
+  onSelect?: () => void;
+}) {
   const objects = useLayoutStore((s) => s.objects);
   const settings = useLayoutStore((s) => s.settings);
   const select = useLayoutStore((s) => s.select);
@@ -54,6 +62,7 @@ export default function WarningsPanel({ headless = false }: { headless?: boolean
     const ids = Array.from(new Set(warning.objectIds));
     if (ids.length === 0) {
       select(null);
+      onSelect?.();
       return;
     }
     // Replace the selection with the first id, then extend additively. Doing it
@@ -61,6 +70,7 @@ export default function WarningsPanel({ headless = false }: { headless?: boolean
     // never a toggle of whatever happened to be selected before.
     select(ids[0]);
     for (let i = 1; i < ids.length; i++) select(ids[i], true);
+    onSelect?.();
   };
 
   return (
@@ -127,7 +137,7 @@ export default function WarningsPanel({ headless = false }: { headless?: boolean
                   type="button"
                   onClick={() => selectImplicated(w)}
                   aria-label={`Select ${names.join(' and ') || 'objects'} — ${w.message}`}
-                  className="flex min-h-11 w-full items-start gap-2 px-3 py-2 text-left hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+                  className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-black/[0.04] max-md:min-h-11 dark:hover:bg-white/[0.06]"
                 >
                   <span
                     aria-hidden="true"

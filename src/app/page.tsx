@@ -1,12 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 
 import FloorPlanCanvas from '@/components/canvas/FloorPlanCanvas';
-import BottomSheet from '@/components/mobile/BottomSheet';
-import MobileBottomBar, {
-  type MobileSheet,
-} from '@/components/mobile/MobileBottomBar';
+import MobilePanels from '@/components/mobile/MobilePanels';
 import SidePanel from '@/components/panel/SidePanel';
 import StatsBar from '@/components/StatsBar';
 import Toolbar from '@/components/Toolbar';
@@ -23,7 +20,6 @@ export default function Page() {
   const hydrateView = useViewStore((s) => s.hydrateView);
 
   const isMobile = useIsMobile();
-  const [sheet, setSheet] = useState<MobileSheet>('none');
 
   /**
    * The layout lives in localStorage / the URL hash, neither of which exists on
@@ -75,36 +71,7 @@ export default function Page() {
       {/* The 3D view carries its own HUD and bottom sheet, and its controls are
           not the plan's. Stacking a second bar under it would leave a phone with
           two competing sheets and almost no model. */}
-      {isMobile && mode === '2d' ? (
-        <>
-          <MobileBottomBar onOpen={setSheet} />
-
-          <BottomSheet
-            open={sheet === 'objects'}
-            onClose={() => setSheet('none')}
-            title="Objects"
-            initialSnap="full"
-          >
-            <SidePanel />
-          </BottomSheet>
-
-          <BottomSheet
-            open={sheet === 'stats'}
-            onClose={() => setSheet('none')}
-            title="Statistics"
-          >
-            <StatsBar />
-          </BottomSheet>
-
-          <BottomSheet
-            open={sheet === 'warnings'}
-            onClose={() => setSheet('none')}
-            title="Warnings"
-          >
-            <WarningsPanel headless />
-          </BottomSheet>
-        </>
-      ) : null}
+      {isMobile && mode === '2d' ? <MobilePanels /> : null}
     </main>
   );
 }

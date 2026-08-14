@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 
 import BottomSheet from '@/components/mobile/BottomSheet';
 import WalkStick from '@/components/three/WalkStick';
@@ -46,14 +46,15 @@ const PRESETS: Array<{ key: CameraViewKey; label: string; walk: boolean }> = [
   { key: 'vip', label: 'VIP', walk: true },
 ];
 
+/** The `max-md:` sizing keeps the desktop chip row byte-identical to before:
+ *  shrink-0 and nowrap are only wanted in the mobile scroller. */
 const CHIP =
-  'shrink-0 whitespace-nowrap rounded-md border border-slate-300 bg-white/90 px-2 py-1 text-[11px] font-medium text-slate-700 ' +
-  'shadow-sm backdrop-blur transition-colors hover:bg-slate-100 max-md:min-h-11 max-md:px-3';
+  'rounded-md border border-slate-300 bg-white/90 px-2 py-1 text-[11px] font-medium text-slate-700 ' +
+  'shadow-sm backdrop-blur transition-colors hover:bg-slate-100 ' +
+  'max-md:min-h-11 max-md:shrink-0 max-md:whitespace-nowrap max-md:px-3';
 const CHIP_ON =
-  'shrink-0 whitespace-nowrap rounded-md border border-slate-800 bg-slate-800 px-2 py-1 text-[11px] font-medium text-white shadow-sm ' +
-  'max-md:min-h-11 max-md:px-3';
-
-type HudSheet = 'none' | 'structure' | 'clearance';
+  'rounded-md border border-slate-800 bg-slate-800 px-2 py-1 text-[11px] font-medium text-white shadow-sm ' +
+  'max-md:min-h-11 max-md:shrink-0 max-md:whitespace-nowrap max-md:px-3';
 
 export default function View3D() {
   const objects = useLayoutStore((s) => s.objects);
@@ -74,7 +75,6 @@ export default function View3D() {
   const toggle = useViewStore((s) => s.toggle);
 
   const isMobile = useIsMobile();
-  const [hudSheet, setHudSheet] = useState<HudSheet>('none');
 
   /**
    * Labels are off by default on a phone and on by default everywhere else.
@@ -215,7 +215,7 @@ export default function View3D() {
               Orbit/Walk and Schematic/Materials are the two switches that
               change what you are looking at, so they come before the five
               viewpoint presets, which only move you within it. */}
-          <div className="pointer-events-auto flex shrink-0 items-center gap-1.5 max-md:order-1">
+          <div className="pointer-events-auto flex items-center gap-1.5 max-md:shrink-0 max-md:order-1">
             <button
               type="button"
               className={cameraMode === 'orbit' ? CHIP_ON : CHIP}
@@ -233,7 +233,7 @@ export default function View3D() {
               Walk
             </button>
           </div>
-          <div className="pointer-events-auto ml-2 flex shrink-0 items-center gap-1.5 max-md:order-3">
+          <div className="pointer-events-auto ml-2 flex items-center gap-1.5 max-md:shrink-0 max-md:order-3">
             {PRESETS.map((p) => (
               <button
                 key={p.key}
@@ -245,7 +245,7 @@ export default function View3D() {
               </button>
             ))}
           </div>
-          <div className="pointer-events-auto ml-2 flex shrink-0 items-center gap-1.5 max-md:order-2">
+          <div className="pointer-events-auto ml-2 flex items-center gap-1.5 max-md:shrink-0 max-md:order-2">
             <button
               type="button"
               className={paletteMode === 'schematic' ? CHIP_ON : CHIP}
@@ -302,41 +302,72 @@ export default function View3D() {
         </div>
       ) : null}
 
-      {/* ---------------- mobile HUD ---------------- */}
+      {/* Gated in JS, not just by `md:hidden`. Left to CSS, the sheets stayed
+          mounted at desktop width with a live window Escape listener, swallowing
+          the key on a viewport where nothing of theirs was visible. */}
+      {isMobile ? (
+        <MobileHud
+          slabSoffitM={structure.slabSoffitM}
+          clearanceHeadline={clearanceHeadline}
+          failing={failing.length}
+          structureBody={structureBody}
+          clearanceBody={clearanceBody}
+        />
+      ) : null}
+    </div>
+  );
+}
 
+/**
+ * The phone's replacement for the two floating panels: a bar of headline figures
+ * that opens the full panel in a sheet.
+ *
+ * Which sheet is open lives here so that it dies with the bar — see the same
+ * reasoning in MobilePanels.
+ */
+function MobileHud({
+  slabSoffitM,
+  clearanceHeadline,
+  failing,
+  structureBody,
+  clearanceBody,
+}: {
+  slabSoffitM: number;
+  clearanceHeadline: string;
+  failing: number;
+  structureBody: ReactNode;
+  clearanceBody: ReactNode;
+}) {
+  const [sheet, setSheet] = useState<'none' | 'structure' | 'clearance'>('none');
+  const close = () => setSheet('none');
+
+  return (
+    <>
       <div
         className="pointer-events-auto absolute inset-x-0 bottom-0 flex items-stretch gap-2 border-t border-slate-300 bg-white/92 px-2 pt-2 backdrop-blur md:hidden"
         style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0.5rem)' }}
       >
         <HudButton
           caption="Structure"
-          value={`${structure.slabSoffitM.toFixed(2)} m slab`}
-          onClick={() => setHudSheet('structure')}
+          value={`${slabSoffitM.toFixed(2)} m slab`}
+          onClick={() => setSheet('structure')}
         />
         <HudButton
           caption="Swing clearance"
           value={clearanceHeadline}
-          tone={failing.length > 0 ? 'warn' : 'neutral'}
-          onClick={() => setHudSheet('clearance')}
+          tone={failing > 0 ? 'warn' : 'neutral'}
+          onClick={() => setSheet('clearance')}
         />
       </div>
 
-      <BottomSheet
-        open={hudSheet === 'structure'}
-        onClose={() => setHudSheet('none')}
-        title="Structure"
-      >
+      <BottomSheet open={sheet === 'structure'} onClose={close} title="Structure">
         <div className="px-3 pb-3 text-xs">{structureBody}</div>
       </BottomSheet>
 
-      <BottomSheet
-        open={hudSheet === 'clearance'}
-        onClose={() => setHudSheet('none')}
-        title="Swing clearance"
-      >
+      <BottomSheet open={sheet === 'clearance'} onClose={close} title="Swing clearance">
         <div className="px-3 pb-3 text-xs">{clearanceBody}</div>
       </BottomSheet>
-    </div>
+    </>
   );
 }
 

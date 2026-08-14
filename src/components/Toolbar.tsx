@@ -71,22 +71,28 @@ type CopyState = 'idle' | 'copied' | 'manual' | 'error';
 function MenuItem({
   label,
   detail,
-  on = false,
+  on,
   disabled = false,
   onClick,
 }: {
   label: string;
   detail?: ReactNode;
+  /** Omit for a one-shot action; pass a boolean for a toggle. */
   on?: boolean;
   disabled?: boolean;
   onClick: () => void;
 }) {
+  // `on === undefined` means this is an action, not a toggle. Emitting
+  // aria-pressed regardless announced "Fit plan to view, not pressed" — a
+  // one-shot command described as an unchecked switch.
+  const isToggle = on !== undefined;
   return (
     <button
       type="button"
+      role={isToggle ? 'menuitemcheckbox' : 'menuitem'}
+      aria-checked={isToggle ? on : undefined}
       onClick={onClick}
       disabled={disabled}
-      aria-pressed={on}
       className="flex min-h-11 w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-black/[0.05] disabled:opacity-40 disabled:hover:bg-transparent"
     >
       <span
@@ -114,6 +120,7 @@ function MenuItem({
 function OverflowMenu({ children }: { children: (close: () => void) => ReactNode }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const close = useCallback(() => setOpen(false), []);
 
   useEffect(() => {
@@ -122,19 +129,31 @@ function OverflowMenu({ children }: { children: (close: () => void) => ReactNode
       if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key !== 'Escape') return;
+      /**
+       * Capture + stopImmediatePropagation for the same reason as BottomSheet:
+       * FloorPlanCanvas listens for Escape on `window` too and would clear the
+       * canvas selection behind the menu the key was meant to dismiss.
+       */
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      setOpen(false);
+      // Escape should hand the keyboard back to the control that opened this,
+      // not drop it at the top of the document.
+      triggerRef.current?.focus();
     };
     document.addEventListener('pointerdown', onPointerDown);
-    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown, true);
     return () => {
       document.removeEventListener('pointerdown', onPointerDown);
-      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keydown', onKeyDown, true);
     };
   }, [open]);
 
   return (
     <div ref={wrapRef} className="relative ml-auto">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
