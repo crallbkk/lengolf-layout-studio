@@ -2,8 +2,10 @@
 
 import { OrbitControls } from '@react-three/drei';
 import { Canvas, useThree } from '@react-three/fiber';
-import { useEffect, useMemo } from 'react';
+import { Suspense, useEffect, useMemo } from 'react';
 import * as THREE from 'three';
+
+import Context3D from './Context3D';
 
 import type { PlacedObject } from '@/lib/types';
 import {
@@ -107,8 +109,14 @@ export default function Scene3D({
       // of the layout as drawn rather than one the image model invented.
       gl={{ antialias: true, preserveDrawingBuffer: true }}
     >
-      <color attach="background" args={['#eceae6']} />
-      <fog attach="fog" args={['#eceae6', 45, 130]} />
+      <color attach="background" args={['#dee5e8']} />
+      <fog attach="fog" args={['#dee5e8', 60, 160]} />
+
+      {/* The outlook is a photograph, so it must not block the first frame if
+          it is slow or missing. */}
+      <Suspense fallback={null}>
+        <Context3D />
+      </Suspense>
 
       {/* Flat, even light. A study model should not have mood lighting: shadow
           reads as design intent and there is none here to communicate. */}
