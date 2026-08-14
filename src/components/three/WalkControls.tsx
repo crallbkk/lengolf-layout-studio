@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 
 import type { CameraView } from './cameraViews';
+import { walkInput } from './walkInput';
 
 /**
  * First-person controls: drag to look, WASD to walk.
@@ -40,6 +41,8 @@ export default function WalkControls({
   const yaw = useRef(0);
   const pitch = useRef(0);
   const dragging = useRef(false);
+  /** Last pointer position of the look drag; see the note in the effect. */
+  const lastLook = useRef({ x: 0, y: 0 });
   const keys = useRef<Set<string>>(new Set());
   /**
    * Which viewpoint has been applied. Walk mode owns the camera outright — it
@@ -56,14 +59,26 @@ export default function WalkControls({
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
       dragging.current = true;
+      lastLook.current = { x: e.clientX, y: e.clientY };
       el.setPointerCapture(e.pointerId);
       el.style.cursor = 'grabbing';
     };
+    /**
+     * Deltas are measured from the previous client position rather than read
+     * from `movementX` / `movementY`. Those are populated for mouse but are
+     * flatly 0 for touch pointers in Safari, so on an iPhone the look drag did
+     * nothing at all — and walk mode with neither looking nor walking is just a
+     * frozen photograph. Without pointer lock the two are equivalent for a
+     * mouse, so this costs desktop nothing.
+     */
     const onPointerMove = (e: PointerEvent) => {
       if (!dragging.current) return;
-      yaw.current -= e.movementX * LOOK_SPEED;
+      const dx = e.clientX - lastLook.current.x;
+      const dy = e.clientY - lastLook.current.y;
+      lastLook.current = { x: e.clientX, y: e.clientY };
+      yaw.current -= dx * LOOK_SPEED;
       pitch.current = THREE.MathUtils.clamp(
-        pitch.current - e.movementY * LOOK_SPEED,
+        pitch.current - dy * LOOK_SPEED,
         -PITCH_LIMIT,
         PITCH_LIMIT,
       );
@@ -92,6 +107,10 @@ export default function WalkControls({
     const onBlur = () => keys.current.clear();
 
     el.style.cursor = 'grab';
+    // OrbitControls sets this for itself while it is mounted; walk mode has to
+    // do it by hand, or a look drag on touch is also a page gesture.
+    const prevTouchAction = el.style.touchAction;
+    el.style.touchAction = 'none';
     el.addEventListener('pointerdown', onPointerDown);
     el.addEventListener('pointermove', onPointerMove);
     el.addEventListener('pointerup', endDrag);
@@ -102,6 +121,7 @@ export default function WalkControls({
 
     return () => {
       el.style.cursor = '';
+      el.style.touchAction = prevTouchAction;
       el.removeEventListener('pointerdown', onPointerDown);
       el.removeEventListener('pointermove', onPointerMove);
       el.removeEventListener('pointerup', endDrag);
@@ -137,13 +157,27 @@ export default function WalkControls({
       new THREE.Euler(pitch.current, yaw.current, 0, 'YXZ'),
     );
 
+    /**
+     * Keyboard and thumbstick land on the same two scalars, so there is exactly
+     * one movement path for both. Anything that changes how walking feels —
+     * speed, the horizontal-plane constraint below — changes for both at once
+     * and the touch behaviour cannot quietly drift from the desktop one.
+     *
+     * Clamped because a held key and a pushed stick can be additive, and 2.0
+     * forward would double the walk speed for no reason the user asked for.
+     */
     const k = keys.current;
-    const forward =
+    const clamp1 = (n: number) => THREE.MathUtils.clamp(n, -1, 1);
+    const forward = clamp1(
       (k.has('w') || k.has('arrowup') ? 1 : 0) -
-      (k.has('s') || k.has('arrowdown') ? 1 : 0);
-    const strafe =
+        (k.has('s') || k.has('arrowdown') ? 1 : 0) +
+        walkInput.forward,
+    );
+    const strafe = clamp1(
       (k.has('d') || k.has('arrowright') ? 1 : 0) -
-      (k.has('a') || k.has('arrowleft') ? 1 : 0);
+        (k.has('a') || k.has('arrowleft') ? 1 : 0) +
+        walkInput.strafe,
+    );
 
     if (forward !== 0 || strafe !== 0) {
       const speed = WALK_SPEED * (k.has('shift') ? 2.2 : 1) * delta;

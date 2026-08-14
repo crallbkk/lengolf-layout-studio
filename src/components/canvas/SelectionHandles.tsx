@@ -46,6 +46,8 @@ interface SelectionHandlesProps {
   object: PlacedObject;
   viewport: Viewport;
   pixelWidth: number;
+  /** True on touchscreens: grips get finger-sized hit areas. */
+  coarsePointer?: boolean;
   /** Does NOT stop propagation — the canvas root owns pointer capture. */
   onHandlePointerDown: (
     handle: HandleId,
@@ -57,15 +59,35 @@ export default function SelectionHandles({
   object,
   viewport,
   pixelWidth,
+  coarsePointer = false,
   onHandlePointerDown,
 }: SelectionHandlesProps) {
   const hw = object.w / 2;
   const hd = object.d / 2;
 
   const half = px(4.5, viewport, pixelWidth);
-  const hit = px(11, viewport, pixelWidth);
-  const stalk = px(26, viewport, pixelWidth);
+
+  /**
+   * Hit areas, not grips: the drawn squares stay 9 px at every zoom because
+   * that is what reads as a handle. Only what you can grab changes.
+   *
+   * The clamp to a quarter of the shorter side is what keeps a touch-sized hit
+   * area from eating the object it belongs to. Eight handles at 44 px around a
+   * 60 px-wide bay would blanket it completely, and the object could no longer
+   * be dragged at all — you would only ever resize it. Capping each handle's
+   * inward reach at w/4 (and d/4) guarantees the middle half of the shape stays
+   * a move target however far out the plan is zoomed.
+   */
+  const hit = Math.min(
+    px(coarsePointer ? 22 : 11, viewport, pixelWidth),
+    Math.min(object.w, object.d) / 4,
+  );
+
+  // A longer stalk on touch, so the rotate grip clears the fingertip that is
+  // already covering the top edge of the object.
+  const stalk = px(coarsePointer ? 44 : 26, viewport, pixelWidth);
   const rotR = px(6, viewport, pixelWidth);
+  const rotHit = px(coarsePointer ? 22 : 11, viewport, pixelWidth);
 
   return (
     <g transform={`translate(${object.cx} ${object.cy}) rotate(${object.rotation})`}>
@@ -83,7 +105,7 @@ export default function SelectionHandles({
       <circle
         cx={0}
         cy={-hd - stalk}
-        r={hit}
+        r={rotHit}
         fill="transparent"
         stroke="none"
         style={{ cursor: 'grab' }}

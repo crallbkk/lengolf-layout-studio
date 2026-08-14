@@ -13,7 +13,13 @@ import { useLayoutStore } from '@/store/useLayoutStore';
  */
 const MAX_RENDERED = 50;
 
-export default function WarningsPanel() {
+/**
+ * `headless` drops the title row and the collapse control, for when the panel
+ * is already inside something titled and dismissable — the mobile bottom sheet.
+ * Two nested disclosure controls invite you to collapse a panel inside a sheet
+ * and be left looking at an empty sheet.
+ */
+export default function WarningsPanel({ headless = false }: { headless?: boolean }) {
   const objects = useLayoutStore((s) => s.objects);
   const settings = useLayoutStore((s) => s.settings);
   const select = useLayoutStore((s) => s.select);
@@ -60,8 +66,11 @@ export default function WarningsPanel() {
   return (
     <section
       aria-label="Layout warnings"
-      className="rounded-md border border-black/10 dark:border-white/15"
+      className={
+        headless ? '' : 'rounded-md border border-black/10 dark:border-white/15'
+      }
     >
+      {headless ? null : (
       <h2 className="m-0">
         <button
           type="button"
@@ -96,14 +105,18 @@ export default function WarningsPanel() {
           </span>
         </button>
       </h2>
+      )}
 
-      {collapsed ? null : ordered.length === 0 ? (
+      {!headless && collapsed ? null : ordered.length === 0 ? (
         <p className="px-3 pb-3 pt-1 text-xs leading-relaxed text-emerald-700 dark:text-emerald-400">
           <span aria-hidden="true">✓</span> Everything fits. No overlaps, nothing
           outside the unit, and every clearance rule is satisfied.
         </p>
       ) : (
-        <ul className="m-0 max-h-80 list-none overflow-y-auto p-0">
+        // The scroll cap is for the desktop column, where this panel shares a
+        // fixed height with the side panel above it. In the sheet the sheet
+        // itself scrolls, and a nested cap would strand the last warnings.
+        <ul className="m-0 list-none p-0 md:max-h-80 md:overflow-y-auto">
           {shown.map((w) => {
             const names = w.objectIds
               .map((id) => labels.get(id))
@@ -114,7 +127,7 @@ export default function WarningsPanel() {
                   type="button"
                   onClick={() => selectImplicated(w)}
                   aria-label={`Select ${names.join(' and ') || 'objects'} — ${w.message}`}
-                  className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+                  className="flex min-h-11 w-full items-start gap-2 px-3 py-2 text-left hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
                 >
                   <span
                     aria-hidden="true"

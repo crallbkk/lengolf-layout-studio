@@ -29,6 +29,9 @@ export interface ObjectShapeProps {
   onPointerDown: (e: ReactPointerEvent<SVGGElement>) => void;
   viewport: Viewport;
   pixelWidth: number;
+  /** True on touchscreens: the padlock gets a finger-sized target, and stops
+   *  relying on hover to be discovered. */
+  coarsePointer?: boolean;
 }
 
 function ObjectShape({
@@ -40,6 +43,7 @@ function ObjectShape({
   onPointerDown,
   viewport,
   pixelWidth,
+  coarsePointer = false,
 }: ObjectShapeProps) {
   const { cx, cy, w, d, rotation } = object;
   const hw = w / 2;
@@ -73,6 +77,26 @@ function ObjectShape({
   const lockCy = -hd + lockPad + lockSize / 2;
   // Hide the padlock when it would swamp the object it belongs to.
   const showLock = widthPx >= 30 && depthPx >= 26;
+
+  /**
+   * The 0.32 rest opacity was "dimmed until you hover it" — a rule that assumes
+   * a cursor. On a phone there is no hover state to promote it out of, so the
+   * only affordance for locking is a barely-visible ghost. Touch gets it at a
+   * legible weight instead.
+   */
+  const lockOpacity = object.locked ? 1 : coarsePointer ? 0.7 : 0.32;
+
+  /**
+   * Finger-sized target on touch, clamped to a third of the shorter side so the
+   * corner it sits in never becomes the whole object — otherwise a tap meant to
+   * select and drag a small bay would toggle its lock instead.
+   */
+  const lockHitHalf = coarsePointer
+    ? Math.max(
+        lockSize * 0.7,
+        Math.min(px(22, viewport, pixelWidth), Math.min(w, d) / 3),
+      )
+    : lockSize * 0.7;
 
   const handleLockPointerDown = (e: ReactPointerEvent<SVGGElement>) => {
     e.stopPropagation();
@@ -179,14 +203,14 @@ function ObjectShape({
           transform={`translate(${lockCx} ${lockCy})`}
           onPointerDown={handleLockPointerDown}
           style={{ cursor: 'pointer' }}
-          opacity={object.locked ? 1 : 0.32}
+          opacity={lockOpacity}
         >
           {/* Generous invisible hit target. */}
           <rect
-            x={-lockSize * 0.7}
-            y={-lockSize * 0.7}
-            width={lockSize * 1.4}
-            height={lockSize * 1.4}
+            x={-lockHitHalf}
+            y={-lockHitHalf}
+            width={lockHitHalf * 2}
+            height={lockHitHalf * 2}
             fill="transparent"
             stroke="none"
           />

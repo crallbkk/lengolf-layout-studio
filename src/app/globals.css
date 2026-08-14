@@ -28,6 +28,18 @@
 html,
 body {
   height: 100%;
+  /*
+   * dvh tracks the iOS Safari URL bar as it shows and hides; with 100% (or vh)
+   * the app is laid out against the *large* viewport, so the bottom bar and any
+   * open sheet sit under the browser chrome until the user scrolls — and the
+   * page cannot scroll, because the canvas owns panning. The 100% above stays
+   * as the fallback for engines without dynamic viewport units.
+   *
+   * These live here rather than as `h-full` classes on <html>/<body>: a utility
+   * class outranks an element selector, so the class would win and the dvh rule
+   * would never apply.
+   */
+  height: 100dvh;
 }
 
 body {

@@ -3,8 +3,11 @@
 import dynamic from 'next/dynamic';
 import { useCallback, useRef, useState } from 'react';
 
+import BottomSheet from '@/components/mobile/BottomSheet';
+import WalkStick from '@/components/three/WalkStick';
+import { useIsMobile } from '@/hooks/useMediaQuery';
 import type { ClearanceResult } from '@/lib/volume';
-import { SWING_CLEARANCE_M } from '@/lib/volume';
+import { SWING_CLEARANCE_M, type Structure } from '@/lib/volume';
 import { useLayoutStore } from '@/store/useLayoutStore';
 import { useViewStore } from '@/store/useViewStore';
 import {
@@ -17,6 +20,12 @@ import {
  * The 3D panel: canvas plus the controls that make it a study tool rather than
  * a picture — the two soffit heights, and a live read of what they do to the
  * swing clearance in every bay.
+ *
+ * On desktop those two readouts float over opposite bottom corners. On a phone
+ * a w-72 and a w-64 panel do not fit side by side at all: they overlapped each
+ * other and buried the model they exist to explain. Below md they collapse into
+ * one bottom bar showing each panel's headline figure, which opens the full
+ * panel in a sheet.
  */
 
 // WebGL has no server-side equivalent, so the whole scene is client-only.
@@ -38,10 +47,13 @@ const PRESETS: Array<{ key: CameraViewKey; label: string; walk: boolean }> = [
 ];
 
 const CHIP =
-  'rounded-md border border-slate-300 bg-white/90 px-2 py-1 text-[11px] font-medium text-slate-700 ' +
-  'shadow-sm backdrop-blur transition-colors hover:bg-slate-100';
+  'shrink-0 whitespace-nowrap rounded-md border border-slate-300 bg-white/90 px-2 py-1 text-[11px] font-medium text-slate-700 ' +
+  'shadow-sm backdrop-blur transition-colors hover:bg-slate-100 max-md:min-h-11 max-md:px-3';
 const CHIP_ON =
-  'rounded-md border border-slate-800 bg-slate-800 px-2 py-1 text-[11px] font-medium text-white shadow-sm';
+  'shrink-0 whitespace-nowrap rounded-md border border-slate-800 bg-slate-800 px-2 py-1 text-[11px] font-medium text-white shadow-sm ' +
+  'max-md:min-h-11 max-md:px-3';
+
+type HudSheet = 'none' | 'structure' | 'clearance';
 
 export default function View3D() {
   const objects = useLayoutStore((s) => s.objects);
@@ -60,6 +72,23 @@ export default function View3D() {
   const paletteMode = useViewStore((s) => s.palette);
   const setPalette = useViewStore((s) => s.setPalette);
   const toggle = useViewStore((s) => s.toggle);
+
+  const isMobile = useIsMobile();
+  const [hudSheet, setHudSheet] = useState<HudSheet>('none');
+
+  /**
+   * Labels are off by default on a phone and on by default everywhere else.
+   *
+   * Seventeen `<Html>` labels is seventeen live DOM nodes composited over the
+   * canvas every frame, and at 375px wide they cover most of what they annotate.
+   * The default belongs on the small screen, not in the persisted setting:
+   * `useViewStore` is out of scope here, and writing a phone's preference into
+   * a store that syncs to localStorage would follow the user back to a desktop.
+   * Local state keeps the `Labels` chip honest — it still reflects and controls
+   * exactly what is on screen.
+   */
+  const [mobileLabels, setMobileLabels] = useState(false);
+  const effectiveShowLabels = isMobile ? mobileLabels : showLabels;
 
   const containerRef = useRef<HTMLDivElement>(null);
   // Same reason as enterWalk: if walk mode was persisted from a previous
@@ -118,6 +147,39 @@ export default function View3D() {
     null,
   );
 
+  const clearanceHeadline =
+    clearances.length === 0
+      ? 'no bays'
+      : failing.length > 0
+        ? `${failing.length} of ${clearances.length} short`
+        : tightest
+          ? `tightest ${tightest.clearM.toFixed(2)} m`
+          : 'all clear';
+
+  const structureBody = (
+    <StructureBody
+      structure={structure}
+      setStructure={setStructure}
+      resetStructure={resetStructure}
+      showBeams={showBeams}
+      showCeiling={showCeiling}
+      showFigures={showFigures}
+      showLabels={effectiveShowLabels}
+      onToggleLabels={() =>
+        isMobile ? setMobileLabels((v) => !v) : toggle('showLabels')
+      }
+      toggle={toggle}
+    />
+  );
+
+  const clearanceBody = (
+    <ClearanceBody
+      clearances={clearances}
+      failing={failing.length}
+      tightest={tightest}
+    />
+  );
+
   return (
     <div ref={containerRef} className="relative h-full w-full">
       <Scene3D
@@ -128,7 +190,7 @@ export default function View3D() {
         showCeiling={showCeiling}
         showBeams={showBeams}
         showFigures={showFigures}
-        showLabels={showLabels}
+        showLabels={effectiveShowLabels}
         paletteMode={paletteMode}
         view={view}
         viewNonce={viewNonce}
@@ -137,175 +199,320 @@ export default function View3D() {
         onClearances={handleClearances}
       />
 
-      {/* Viewpoints and camera mode. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-center gap-1.5 p-2">
-        <div className="pointer-events-auto flex items-center gap-1.5">
-          <button
-            type="button"
-            className={cameraMode === 'orbit' ? CHIP_ON : CHIP}
-            onClick={() => setCameraMode('orbit')}
-            aria-pressed={cameraMode === 'orbit'}
-          >
-            Orbit
-          </button>
-          <button
-            type="button"
-            className={cameraMode === 'walk' ? CHIP_ON : CHIP}
-            onClick={() => enterWalk()}
-            aria-pressed={cameraMode === 'walk'}
-          >
-            Walk
-          </button>
-        </div>
-        <div className="pointer-events-auto ml-2 flex items-center gap-1.5">
-          {PRESETS.map((p) => (
+      {/* Viewpoints and camera mode.
+
+          Below md the row scrolls sideways instead of wrapping. Wrapping put
+          four rows of chips over the top third of the model; scrolling keeps it
+          to one. The scroller stays pointer-events-none so the gaps between
+          chips remain draggable canvas — a touch that lands on a chip still
+          scrolls the row, because scroll chaining follows the hit element's
+          ancestors regardless of their own hit-testing. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 p-2">
+        <div className="flex flex-wrap items-center gap-1.5 max-md:flex-nowrap max-md:overflow-x-auto max-md:pb-1">
+          <div className="pointer-events-auto flex shrink-0 items-center gap-1.5">
             <button
-              key={p.key}
               type="button"
-              className={CHIP}
-              onClick={() => applyPreset(p.key, p.walk)}
+              className={cameraMode === 'orbit' ? CHIP_ON : CHIP}
+              onClick={() => setCameraMode('orbit')}
+              aria-pressed={cameraMode === 'orbit'}
             >
-              {p.label}
+              Orbit
             </button>
-          ))}
-        </div>
-        <div className="pointer-events-auto ml-2 flex items-center gap-1.5">
+            <button
+              type="button"
+              className={cameraMode === 'walk' ? CHIP_ON : CHIP}
+              onClick={() => enterWalk()}
+              aria-pressed={cameraMode === 'walk'}
+            >
+              Walk
+            </button>
+          </div>
+          <div className="pointer-events-auto ml-2 flex shrink-0 items-center gap-1.5">
+            {PRESETS.map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                className={CHIP}
+                onClick={() => applyPreset(p.key, p.walk)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <div className="pointer-events-auto ml-2 flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              className={paletteMode === 'schematic' ? CHIP_ON : CHIP}
+              onClick={() => setPalette('schematic')}
+              aria-pressed={paletteMode === 'schematic'}
+              title="Study colours, flat light"
+            >
+              Schematic
+            </button>
+            <button
+              type="button"
+              className={paletteMode === 'finished' ? CHIP_ON : CHIP}
+              onClick={() => setPalette('finished')}
+              aria-pressed={paletteMode === 'finished'}
+              title="LENGOLF materials, warm low light"
+            >
+              Materials
+            </button>
+          </div>
           <button
             type="button"
-            className={paletteMode === 'schematic' ? CHIP_ON : CHIP}
-            onClick={() => setPalette('schematic')}
-            aria-pressed={paletteMode === 'schematic'}
-            title="Study colours, flat light"
+            className={`${CHIP} pointer-events-auto ml-2`}
+            onClick={savePng}
           >
-            Schematic
+            Save PNG
           </button>
-          <button
-            type="button"
-            className={paletteMode === 'finished' ? CHIP_ON : CHIP}
-            onClick={() => setPalette('finished')}
-            aria-pressed={paletteMode === 'finished'}
-            title="LENGOLF materials, warm low light"
-          >
-            Materials
-          </button>
+          <p className="pointer-events-none ml-auto rounded-md bg-white/80 px-2 py-1 text-[10px] leading-tight text-slate-500 backdrop-blur max-md:hidden">
+            {cameraMode === 'walk'
+              ? 'Drag to look · W A S D to walk · Shift to run'
+              : 'Drag to orbit · scroll to zoom · right-drag to pan'}
+          </p>
         </div>
-        <button type="button" className={`${CHIP} pointer-events-auto ml-2`} onClick={savePng}>
-          Save PNG
-        </button>
-        <p className="pointer-events-none ml-auto rounded-md bg-white/80 px-2 py-1 text-[10px] leading-tight text-slate-500 backdrop-blur">
-          {cameraMode === 'walk'
-            ? 'Drag to look · W A S D to walk · Shift to run'
-            : 'Drag to orbit · scroll to zoom · right-drag to pan'}
-        </p>
       </div>
 
+      {/* The touch equivalent of the desktop hint, on its own line so it cannot
+          widen the scrolling chip row. */}
+      <p className="pointer-events-none absolute inset-x-0 top-16 mx-auto w-fit rounded-md bg-white/80 px-2 py-1 text-[10px] leading-tight text-slate-500 backdrop-blur md:hidden">
+        {cameraMode === 'walk'
+          ? 'Drag to look · stick to walk'
+          : 'Drag to orbit · pinch to zoom'}
+      </p>
+
+      {cameraMode === 'walk' ? <WalkStick /> : null}
+
       {/* Structure. The two numbers everything else hangs off. */}
-      <div className="pointer-events-auto absolute bottom-2 left-2 w-72 rounded-lg border border-slate-300 bg-white/92 p-3 text-xs shadow-sm backdrop-blur">
-        <div className="mb-2 flex items-baseline justify-between">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            Structure
-          </h3>
-          <button
-            type="button"
-            onClick={resetStructure}
-            className="text-[10px] text-slate-500 underline hover:text-slate-800"
-          >
-            reset
-          </button>
-        </div>
-
-        <Slider
-          label="Slab soffit"
-          value={structure.slabSoffitM}
-          min={2.4}
-          max={5.5}
-          step={0.05}
-          onChange={(v) =>
-            setStructure({
-              slabSoffitM: v,
-              // The beam soffit can never sit above the slab it hangs from.
-              beamSoffitM: Math.min(structure.beamSoffitM, v),
-            })
-          }
-        />
-        <Slider
-          label="Beam soffit"
-          value={structure.beamSoffitM}
-          min={2.2}
-          max={structure.slabSoffitM}
-          step={0.05}
-          onChange={(v) => setStructure({ beamSoffitM: v })}
-        />
-        <Slider
-          label="Bay platform"
-          value={structure.bayPlatformM}
-          min={0}
-          max={0.4}
-          step={0.01}
-          onChange={(v) => setStructure({ bayPlatformM: v })}
-        />
-
-        <p className="mt-2 border-t border-slate-200 pt-2 text-[10px] leading-snug text-amber-700">
-          Heights are estimated from the site photographs, not from a drawing.
-          Clear height is unconfirmed by the landlord.
-        </p>
-
-        <div className="mt-2 flex flex-wrap gap-1.5 border-t border-slate-200 pt-2">
-          <Chip on={showBeams} onClick={() => toggle('showBeams')}>
-            Beams
-          </Chip>
-          <Chip on={showCeiling} onClick={() => toggle('showCeiling')}>
-            Slab
-          </Chip>
-          <Chip on={showFigures} onClick={() => toggle('showFigures')}>
-            Figures
-          </Chip>
-          <Chip on={showLabels} onClick={() => toggle('showLabels')}>
-            Labels
-          </Chip>
-        </div>
+      <div className="pointer-events-auto absolute bottom-2 left-2 w-72 rounded-lg border border-slate-300 bg-white/92 p-3 text-xs shadow-sm backdrop-blur max-md:hidden">
+        {structureBody}
       </div>
 
       {/* Swing clearance — the question this view exists to answer. */}
       {clearances.length > 0 ? (
-        <div className="pointer-events-none absolute right-2 bottom-2 w-64 rounded-lg border border-slate-300 bg-white/92 p-3 text-xs shadow-sm backdrop-blur">
-          <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            Swing clearance
-          </h3>
-          <p className="mb-2 text-[10px] leading-snug text-slate-500">
-            Lowest soffit over each bay&rsquo;s play band, above the platform. A
-            full driver swing wants {SWING_CLEARANCE_M.toFixed(2)} m.
-          </p>
-          <ul className="space-y-0.5">
-            {clearances.map((c) => (
-              <li
-                key={c.objectId}
-                className={`flex items-baseline justify-between gap-2 tabular-nums ${
-                  c.ok ? 'text-slate-600' : 'font-semibold text-orange-700'
-                }`}
-              >
-                <span className="truncate">
-                  {c.label}
-                  {c.underBeam ? (
-                    <span className="ml-1 text-[10px] font-normal opacity-70">
-                      under beam
-                    </span>
-                  ) : null}
-                </span>
-                <span>{c.clearM.toFixed(2)} m</span>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 border-t border-slate-200 pt-1.5 text-[10px] text-slate-500">
-            {failing.length > 0
-              ? `${failing.length} of ${clearances.length} bays short of a full swing.`
-              : tightest
-                ? `Tightest bay ${tightest.clearM.toFixed(2)} m — all clear.`
-                : null}
-          </p>
+        <div className="pointer-events-none absolute right-2 bottom-2 w-64 rounded-lg border border-slate-300 bg-white/92 p-3 text-xs shadow-sm backdrop-blur max-md:hidden">
+          {clearanceBody}
         </div>
       ) : null}
+
+      {/* ---------------- mobile HUD ---------------- */}
+
+      <div
+        className="pointer-events-auto absolute inset-x-0 bottom-0 flex items-stretch gap-2 border-t border-slate-300 bg-white/92 px-2 pt-2 backdrop-blur md:hidden"
+        style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0.5rem)' }}
+      >
+        <HudButton
+          caption="Structure"
+          value={`${structure.slabSoffitM.toFixed(2)} m slab`}
+          onClick={() => setHudSheet('structure')}
+        />
+        <HudButton
+          caption="Swing clearance"
+          value={clearanceHeadline}
+          tone={failing.length > 0 ? 'warn' : 'neutral'}
+          onClick={() => setHudSheet('clearance')}
+        />
+      </div>
+
+      <BottomSheet
+        open={hudSheet === 'structure'}
+        onClose={() => setHudSheet('none')}
+        title="Structure"
+      >
+        <div className="px-3 pb-3 text-xs">{structureBody}</div>
+      </BottomSheet>
+
+      <BottomSheet
+        open={hudSheet === 'clearance'}
+        onClose={() => setHudSheet('none')}
+        title="Swing clearance"
+      >
+        <div className="px-3 pb-3 text-xs">{clearanceBody}</div>
+      </BottomSheet>
     </div>
+  );
+}
+
+function HudButton({
+  caption,
+  value,
+  tone = 'neutral',
+  onClick,
+}: {
+  caption: string;
+  value: string;
+  tone?: 'neutral' | 'warn';
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center rounded-lg border border-slate-300 bg-white px-2 py-1 active:bg-slate-100"
+    >
+      <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+        {caption}
+      </span>
+      <span
+        className={`truncate text-sm font-semibold tabular-nums leading-tight ${
+          tone === 'warn' ? 'text-orange-700' : 'text-slate-800'
+        }`}
+      >
+        {value}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * Shared by the desktop floating panel and the mobile sheet, so there is one
+ * copy of the controls and they cannot drift apart.
+ */
+function StructureBody({
+  structure,
+  setStructure,
+  resetStructure,
+  showBeams,
+  showCeiling,
+  showFigures,
+  showLabels,
+  onToggleLabels,
+  toggle,
+}: {
+  structure: Structure;
+  setStructure: (patch: Partial<Structure>) => void;
+  resetStructure: () => void;
+  showBeams: boolean;
+  showCeiling: boolean;
+  showFigures: boolean;
+  showLabels: boolean;
+  onToggleLabels: () => void;
+  toggle: (key: 'showCeiling' | 'showBeams' | 'showFigures' | 'showLabels') => void;
+}) {
+  return (
+    <>
+      <div className="mb-2 flex items-baseline justify-between">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 max-md:hidden">
+          Structure
+        </h3>
+        <button
+          type="button"
+          onClick={resetStructure}
+          className="text-[10px] text-slate-500 underline hover:text-slate-800 max-md:ml-auto max-md:min-h-11 max-md:text-xs"
+        >
+          reset
+        </button>
+      </div>
+
+      <Slider
+        label="Slab soffit"
+        value={structure.slabSoffitM}
+        min={2.4}
+        max={5.5}
+        step={0.05}
+        onChange={(v) =>
+          setStructure({
+            slabSoffitM: v,
+            // The beam soffit can never sit above the slab it hangs from.
+            beamSoffitM: Math.min(structure.beamSoffitM, v),
+          })
+        }
+      />
+      <Slider
+        label="Beam soffit"
+        value={structure.beamSoffitM}
+        min={2.2}
+        max={structure.slabSoffitM}
+        step={0.05}
+        onChange={(v) => setStructure({ beamSoffitM: v })}
+      />
+      <Slider
+        label="Bay platform"
+        value={structure.bayPlatformM}
+        min={0}
+        max={0.4}
+        step={0.01}
+        onChange={(v) => setStructure({ bayPlatformM: v })}
+      />
+
+      <p className="mt-2 border-t border-slate-200 pt-2 text-[10px] leading-snug text-amber-700">
+        Heights are estimated from the site photographs, not from a drawing.
+        Clear height is unconfirmed by the landlord.
+      </p>
+
+      <div className="mt-2 flex flex-wrap gap-1.5 border-t border-slate-200 pt-2">
+        <Chip on={showBeams} onClick={() => toggle('showBeams')}>
+          Beams
+        </Chip>
+        <Chip on={showCeiling} onClick={() => toggle('showCeiling')}>
+          Slab
+        </Chip>
+        <Chip on={showFigures} onClick={() => toggle('showFigures')}>
+          Figures
+        </Chip>
+        <Chip on={showLabels} onClick={onToggleLabels}>
+          Labels
+        </Chip>
+      </div>
+    </>
+  );
+}
+
+function ClearanceBody({
+  clearances,
+  failing,
+  tightest,
+}: {
+  clearances: ClearanceResult[];
+  failing: number;
+  tightest: ClearanceResult | null;
+}) {
+  if (clearances.length === 0) {
+    return (
+      <p className="text-[11px] leading-snug text-slate-500">
+        No bays placed yet, so there is nothing to check.
+      </p>
+    );
+  }
+
+  return (
+    <>
+      <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 max-md:hidden">
+        Swing clearance
+      </h3>
+      <p className="mb-2 text-[10px] leading-snug text-slate-500">
+        Lowest soffit over each bay&rsquo;s play band, above the platform. A full
+        driver swing wants {SWING_CLEARANCE_M.toFixed(2)} m.
+      </p>
+      <ul className="space-y-0.5">
+        {clearances.map((c) => (
+          <li
+            key={c.objectId}
+            className={`flex items-baseline justify-between gap-2 tabular-nums max-md:py-1 max-md:text-sm ${
+              c.ok ? 'text-slate-600' : 'font-semibold text-orange-700'
+            }`}
+          >
+            <span className="truncate">
+              {c.label}
+              {c.underBeam ? (
+                <span className="ml-1 text-[10px] font-normal opacity-70">
+                  under beam
+                </span>
+              ) : null}
+            </span>
+            <span>{c.clearM.toFixed(2)} m</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 border-t border-slate-200 pt-1.5 text-[10px] text-slate-500">
+        {failing > 0
+          ? `${failing} of ${clearances.length} bays short of a full swing.`
+          : tightest
+            ? `Tightest bay ${tightest.clearM.toFixed(2)} m — all clear.`
+            : null}
+      </p>
+    </>
   );
 }
 
@@ -325,13 +532,15 @@ function Slider({
   onChange: (v: number) => void;
 }) {
   return (
-    <label className="mb-2 block">
-      <span className="flex items-baseline justify-between text-[11px] text-slate-600">
+    <label className="mb-2 block max-md:mb-4">
+      <span className="flex items-baseline justify-between text-[11px] text-slate-600 max-md:text-sm">
         {label}
         <span className="tabular-nums font-medium text-slate-800">
           {value.toFixed(2)} m
         </span>
       </span>
+      {/* A 4px range track is a miss on touch; h-11 gives the thumb a
+          finger-sized strip to be grabbed anywhere along. */}
       <input
         type="range"
         min={min}
@@ -339,7 +548,7 @@ function Slider({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-0.5 w-full accent-slate-800"
+        className="mt-0.5 w-full accent-slate-800 max-md:h-11"
       />
     </label>
   );
@@ -361,8 +570,8 @@ function Chip({
       aria-pressed={on}
       className={
         on
-          ? 'rounded border border-slate-800 bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium text-white'
-          : 'rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-slate-100'
+          ? 'rounded border border-slate-800 bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium text-white max-md:min-h-11 max-md:px-3 max-md:text-xs'
+          : 'rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-slate-100 max-md:min-h-11 max-md:px-3 max-md:text-xs'
       }
     >
       {children}

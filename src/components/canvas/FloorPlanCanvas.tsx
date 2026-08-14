@@ -37,6 +37,7 @@ import {
   toLocal,
   toWorld,
 } from '@/lib/geometry';
+import { useCoarsePointer } from '@/hooks/useMediaQuery';
 import type { ObjectKind, PlacedObject, Settings, TypeSpec, Vec2 } from '@/lib/types';
 import {
   clampToContent,
@@ -207,6 +208,10 @@ export default function FloorPlanCanvas() {
   const [marquee, setMarquee] = useState<{ a: Vec2; b: Vec2 } | null>(null);
   const [spaceDown, setSpaceDown] = useState(false);
   const [panning, setPanning] = useState(false);
+
+  // Read once here rather than per shape: 17 objects would otherwise mean 17
+  // matchMedia subscriptions for one answer that is the same for all of them.
+  const coarsePointer = useCoarsePointer();
 
   const objects = useLayoutStore((s) => s.objects);
   const settings = useLayoutStore((s) => s.settings);
@@ -963,6 +968,7 @@ export default function FloorPlanCanvas() {
                 onPointerDown={onObjectPointerDown}
                 viewport={viewport}
                 pixelWidth={size.w}
+                coarsePointer={coarsePointer}
               />
             ))}
           </g>
@@ -988,6 +994,7 @@ export default function FloorPlanCanvas() {
               object={soleSelected}
               viewport={viewport}
               pixelWidth={size.w}
+              coarsePointer={coarsePointer}
               onHandlePointerDown={onHandlePointerDown}
             />
           )}
