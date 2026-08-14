@@ -10,7 +10,7 @@ import {
 import { CATALOG } from '@/lib/catalog';
 import { SHELL_OUTLINE } from '@/lib/floorplan';
 import { pointInPolygon } from '@/lib/geometry';
-import { conceptLayout } from '@/lib/seed';
+import { SEED_VERSION, conceptLayout } from '@/lib/seed';
 import { viewCenter } from '@/lib/viewCenter';
 import type {
   LayoutSnapshot,
@@ -62,6 +62,14 @@ interface LayoutStore {
   past: LayoutSnapshot[];
   future: LayoutSnapshot[];
   hydrated: boolean;
+  /** Published-layout version this working copy came from. */
+  seedVersion: number;
+  /**
+   * True when this browser's saved layout predates the published one. Surfaced
+   * rather than acted on: silently replacing someone's work because a deploy
+   * happened is the one behaviour worse than not showing them the update.
+   */
+  publishedUpdate: boolean;
 
   /* ---- history ----
    * Discrete edits push history themselves. Continuous gestures (drag, resize,
@@ -127,6 +135,8 @@ interface LayoutStore {
   /* ---- persistence ---- */
   hydrate(): void;
   resetToConcept(): void;
+  /** Adopt the published layout, discarding this browser's copy. */
+  loadPublished(): void;
   clearAll(): void;
   shareUrl(): string;
 }
@@ -150,6 +160,7 @@ const snapshot = (s: LayoutStore): LayoutSnapshot => ({
   objects: s.objects.map((o) => ({ ...o })),
   typeOverrides: JSON.parse(JSON.stringify(s.typeOverrides)),
   settings: { ...s.settings },
+  seedVersion: s.seedVersion,
 });
 
 function persist(s: LayoutStore) {
@@ -244,7 +255,15 @@ function parseSnapshot(raw: unknown): LayoutSnapshot | null {
     showClearance: s.showClearance === true,
   };
 
-  return { objects, typeOverrides: overrides, settings };
+  return {
+    objects,
+    typeOverrides: overrides,
+    settings,
+    seedVersion:
+      typeof r.seedVersion === 'number' && Number.isFinite(r.seedVersion)
+        ? r.seedVersion
+        : 0,
+  };
 }
 
 export const useLayoutStore = create<LayoutStore>((set, get) => ({
@@ -256,6 +275,8 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   past: [],
   future: [],
   hydrated: false,
+  publishedUpdate: false,
+  seedVersion: SEED_VERSION,
 
   /* ---------------- history ---------------- */
 
@@ -574,10 +595,13 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     }
 
     if (loaded) {
+      const from = loaded.seedVersion ?? 0;
       set({
         objects: loaded.objects,
         typeOverrides: loaded.typeOverrides,
         settings: loaded.settings,
+        seedVersion: from,
+        publishedUpdate: from < SEED_VERSION,
         hydrated: true,
       });
       /**
@@ -609,7 +633,11 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
         }
       }
     } else {
-      set({ objects: conceptLayout(), hydrated: true });
+      set({
+        objects: conceptLayout(),
+        seedVersion: SEED_VERSION,
+        hydrated: true,
+      });
       persist(get());
     }
   },
@@ -621,6 +649,20 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
       typeOverrides: {},
       settings: { ...DEFAULT_SETTINGS },
       selectedIds: [],
+      seedVersion: SEED_VERSION,
+      publishedUpdate: false,
+    });
+    persist(get());
+  },
+
+  loadPublished() {
+    // Undoable, so adopting the published layout is never a one-way door.
+    get().beginChange();
+    set({
+      objects: conceptLayout(),
+      selectedIds: [],
+      seedVersion: SEED_VERSION,
+      publishedUpdate: false,
     });
     persist(get());
   },

@@ -70,6 +70,9 @@ export default function Toolbar() {
   const shareUrl = useLayoutStore((s) => s.shareUrl);
   const hydrated = useLayoutStore((s) => s.hydrated);
 
+  const publishedUpdate = useLayoutStore((s) => s.publishedUpdate);
+  const loadPublished = useLayoutStore((s) => s.loadPublished);
+
   const viewMode = useViewStore((s) => s.mode);
   const setViewMode = useViewStore((s) => s.setMode);
   const is3d = viewMode === '3d';
@@ -237,6 +240,19 @@ export default function Toolbar() {
       </div>
         </>
       )}
+
+      {/* A newer published layout exists. Offered, not applied: this browser's
+          copy might be someone's afternoon of work. */}
+      {publishedUpdate ? (
+        <button
+          type="button"
+          onClick={loadPublished}
+          title="This browser is showing an older saved layout"
+          className="inline-flex items-center gap-1.5 rounded-md border border-amber-400 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-900 hover:bg-amber-100"
+        >
+          <span aria-hidden="true">↑</span> Load published layout
+        </button>
+      ) : null}
 
       <div className="ml-auto flex items-center gap-2">
         <span
