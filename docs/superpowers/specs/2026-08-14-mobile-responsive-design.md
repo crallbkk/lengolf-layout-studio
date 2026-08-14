@@ -83,10 +83,19 @@ the popover gets a visible text label. Tap targets are at least 44px.
 `src/components/canvas/SelectionHandles.tsx`,
 `src/components/canvas/ObjectShape.tsx`
 
-Under a coarse pointer the handle hit boxes grow from `px(11)` to `px(24)`, and
-the rotate stalk lengthens so the grip clears the fingertip covering the object.
+Under a coarse pointer the handle hit boxes grow from 22px to 44px, and the
+rotate stalk lengthens so the grip clears the fingertip covering the object.
 The padlock loses its 0.32 "discoverable on hover" opacity — hover does not
 exist on a phone — and gains a hit rect at the same 44px-equivalent scale.
+
+The grown hit area is bounded twice, and both bounds are load-bearing. It is
+capped at a quarter of the object's shorter side, or eight 44px handles would
+blanket a bay only 60px wide on screen and it could never be dragged again,
+only resized. It is then floored at the mouse size, because the cap alone made
+touch *worse* than mouse on objects that are small on screen: measured on the
+Bar at the default fit zoom (2.75m deep, 31px on screen), the cap alone gave a
+16px target where a mouse gets 22px. Measured after the floor: 22px there, and
+44px once the object is large enough on screen to allow it.
 
 Existing pointer-event drag modes (pan / move / resize / rotate / marquee) must
 keep working unchanged with a mouse.
@@ -95,11 +104,20 @@ keep working unchanged with a mouse.
 
 `src/components/three/WalkControls.tsx`, `src/components/View3D.tsx`
 
-Walk mode gains a bottom-left virtual thumbstick, touch-only and shown only in
-walk mode on coarse pointers. It feeds the same `forward` / `strafe` scalars
-that WASD produces, so there is one movement path and the mouse behaviour cannot
-drift from the touch behaviour. The look-drag handler ignores pointers that land
-on the stick.
+Walk mode gains a bottom-left virtual thumbstick, shown below md while walking.
+It feeds the same `forward` / `strafe` scalars that WASD produces, so there is
+one movement path and the mouse behaviour cannot drift from the touch behaviour.
+The stick lives in the DOM outside the WebGL canvas, so the canvas's own
+look-drag listener never receives its pointers and no coordination is needed
+between the two.
+
+Walk mode also needs a second, unplanned fix to be usable on a phone at all: its
+look drag read `movementX` / `movementY`, which are flatly 0 for touch pointers
+in Safari. Deltas now come from the previous client position. Without pointer
+lock the two are equivalent for a mouse, so this costs desktop nothing — but
+without it, an iPhone in walk mode could neither look nor move. The canvas also
+sets `touch-action: none` while walking; OrbitControls does this for itself, and
+walk mode had nothing doing it.
 
 Viewpoint chips scroll horizontally (`overflow-x-auto`, `flex-nowrap`) instead
 of wrapping. Structure and Swing clearance collapse into one bottom bar showing
@@ -116,9 +134,25 @@ Object labels default off on mobile. `useViewStore` is out of scope, so this is
 local state in `View3D`; the `Labels` chip toggles that local state on mobile and
 the store on desktop, which keeps the chip honest about what is on screen.
 
-The per-bay `pointLight`s are measured before being touched. The finished
-materials palette was calibrated against them, so the look is not changed on a
-guess.
+The per-bay `pointLight`s turn out to need no change: they are gated on
+`palette.coveIntensity > 0`, which is `0` in the default `schematic` palette, so
+the default mobile scene carries none at all. They exist only in `finished`,
+where the warm pooled light under each bay header is the entire point of that
+palette. Cutting them would be cutting the feature.
+
+## Verification
+
+Measured in-browser rather than eyeballed, since a screenshot cannot show a hit
+area. At 375×812: `main` fills the viewport, the toolbar is one row, the canvas
+is the full 375px wide, and no tap target in the toolbar or bottom bar is under
+44px. Touch select, drag-move, handle-resize and two-finger pinch zoom were each
+driven with synthetic touch pointer events and confirmed to change the layout or
+the viewBox. The thumbstick moves the camera while held and stops on release.
+The look drag was driven with `movementX` left at 0 — the Safari case — and
+still turned the camera.
+
+At 768×1024 and 1280×800 the desktop layout is unchanged: 320px aside, stats bar
+in flow, one toolbar row, no mobile chrome.
 
 ## Acceptance
 

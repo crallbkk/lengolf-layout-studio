@@ -71,16 +71,28 @@ export default function SelectionHandles({
    * Hit areas, not grips: the drawn squares stay 9 px at every zoom because
    * that is what reads as a handle. Only what you can grab changes.
    *
-   * The clamp to a quarter of the shorter side is what keeps a touch-sized hit
-   * area from eating the object it belongs to. Eight handles at 44 px around a
-   * 60 px-wide bay would blanket it completely, and the object could no longer
-   * be dragged at all — you would only ever resize it. Capping each handle's
-   * inward reach at w/4 (and d/4) guarantees the middle half of the shape stays
-   * a move target however far out the plan is zoomed.
+   * Two bounds, and the order of them matters:
+   *
+   * The cap at a quarter of the shorter side stops a touch-sized hit area
+   * eating the object it belongs to. Eight 44 px handles around a bay 60 px
+   * wide on screen would blanket it, and the object could then only ever be
+   * resized, never dragged. Capping each handle's inward reach at w/4 and d/4
+   * keeps the middle half of the shape a move target.
+   *
+   * The floor at the mouse size then stops that cap backfiring. An object that
+   * is small *on screen* — a 2.75 m deep bar zoomed out to 31 px — has no room
+   * for either size, and without the floor the cap would hand touch a 16 px
+   * target where a mouse gets 22 px, which is exactly backwards. Touch is never
+   * worse than mouse; it is better whenever the object is big enough to allow
+   * it, and the way to edit something 31 px tall is to zoom in first.
    */
-  const hit = Math.min(
-    px(coarsePointer ? 22 : 11, viewport, pixelWidth),
-    Math.min(object.w, object.d) / 4,
+  const mouseHit = px(11, viewport, pixelWidth);
+  const hit = Math.max(
+    mouseHit,
+    Math.min(
+      px(coarsePointer ? 22 : 11, viewport, pixelWidth),
+      Math.min(object.w, object.d) / 4,
+    ),
   );
 
   // A longer stalk on touch, so the rotate grip clears the fingertip that is

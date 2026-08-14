@@ -209,7 +209,13 @@ export default function View3D() {
           ancestors regardless of their own hit-testing. */}
       <div className="pointer-events-none absolute inset-x-0 top-0 p-2">
         <div className="flex flex-wrap items-center gap-1.5 max-md:flex-nowrap max-md:overflow-x-auto max-md:pb-1">
-          <div className="pointer-events-auto flex shrink-0 items-center gap-1.5">
+          {/* The `order` overrides apply below md only, so the DOM order — and
+              therefore the desktop row — is untouched. On a phone the row
+              scrolls, and what scrolls off the right is effectively hidden:
+              Orbit/Walk and Schematic/Materials are the two switches that
+              change what you are looking at, so they come before the five
+              viewpoint presets, which only move you within it. */}
+          <div className="pointer-events-auto flex shrink-0 items-center gap-1.5 max-md:order-1">
             <button
               type="button"
               className={cameraMode === 'orbit' ? CHIP_ON : CHIP}
@@ -227,7 +233,7 @@ export default function View3D() {
               Walk
             </button>
           </div>
-          <div className="pointer-events-auto ml-2 flex shrink-0 items-center gap-1.5">
+          <div className="pointer-events-auto ml-2 flex shrink-0 items-center gap-1.5 max-md:order-3">
             {PRESETS.map((p) => (
               <button
                 key={p.key}
@@ -239,7 +245,7 @@ export default function View3D() {
               </button>
             ))}
           </div>
-          <div className="pointer-events-auto ml-2 flex shrink-0 items-center gap-1.5">
+          <div className="pointer-events-auto ml-2 flex shrink-0 items-center gap-1.5 max-md:order-2">
             <button
               type="button"
               className={paletteMode === 'schematic' ? CHIP_ON : CHIP}
@@ -261,7 +267,7 @@ export default function View3D() {
           </div>
           <button
             type="button"
-            className={`${CHIP} pointer-events-auto ml-2`}
+            className={`${CHIP} pointer-events-auto ml-2 max-md:order-4`}
             onClick={savePng}
           >
             Save PNG
@@ -349,6 +355,7 @@ function HudButton({
     <button
       type="button"
       onClick={onClick}
+      aria-label={`${caption} — ${value}. Open the panel.`}
       className="flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center rounded-lg border border-slate-300 bg-white px-2 py-1 active:bg-slate-100"
     >
       <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">

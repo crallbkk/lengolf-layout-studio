@@ -46,22 +46,39 @@ export default function MobileBottomBar({
       className="shrink-0 border-t border-[var(--border)] bg-[var(--background)] px-2 pt-2 md:hidden"
       style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0.5rem)' }}
     >
+      {/* Explicit labels: the visible text of each chip is a bare number, which
+          announces as "17" with no idea what 17 counts. */}
       <div className="flex items-stretch gap-2">
-        <button type="button" className={CHIP} onClick={() => onOpen('objects')}>
+        <button
+          type="button"
+          className={CHIP}
+          aria-label={`Objects — ${objects.length} placed. Open the layout controls.`}
+          onClick={() => onOpen('objects')}
+        >
           <span className={CAPTION}>Objects</span>
           <span className="text-sm font-semibold tabular-nums leading-none">
             {objects.length}
           </span>
         </button>
 
-        <button type="button" className={CHIP} onClick={() => onOpen('stats')}>
+        <button
+          type="button"
+          className={CHIP}
+          aria-label={`Floor area used — ${stats.utilisationPct.toFixed(0)} per cent. Open the statistics.`}
+          onClick={() => onOpen('stats')}
+        >
           <span className={CAPTION}>Used</span>
           <span className="text-sm font-semibold tabular-nums leading-none">
             {stats.utilisationPct.toFixed(0)}%
           </span>
         </button>
 
-        <button type="button" className={CHIP} onClick={() => onOpen('warnings')}>
+        <button
+          type="button"
+          className={CHIP}
+          aria-label={`Warnings — ${stats.hardWarnings} hard, ${stats.softWarnings} soft. Open the warnings.`}
+          onClick={() => onOpen('warnings')}
+        >
           <span className={CAPTION}>Warnings</span>
           {stats.hardWarnings + stats.softWarnings === 0 ? (
             <span className="text-sm font-semibold leading-none text-emerald-700">
